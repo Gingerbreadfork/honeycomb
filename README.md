@@ -1,13 +1,29 @@
-# Honeycomb
+<p align="center">
+  <img src="docs/icon.png" width="96" alt="">
+</p>
 
-A calm blood glucose journal for Linux and Android. Type a reading, press Enter, done. The time is
-already filled in, the charts and statistics take care of themselves, and a clean report is one click
-away when you see your doctor.
+<h1 align="center">Honeycomb</h1>
 
-Honeycomb keeps your data on your own devices. Readings live in a plain text file you can open
-anywhere, and devices sync with each other directly, with no account and no server.
+<p align="center">
+  A calm blood glucose journal for Linux and Android.<br>
+  Log a reading in seconds, watch the trends, hand your doctor a clean report,<br>
+  and keep every device in step with no account and no server.
+</p>
 
-![The Log page in dark mode](docs/screenshots/log-dark.png)
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/log-dark.png">
+    <img src="docs/screenshots/log-light.png" width="920" alt="Honeycomb's Log page: a large reading being typed on the left, this week's chart and the list of readings on the right">
+  </picture>
+</p>
+
+## Why
+
+Living with diabetes means writing down numbers several times a day, for years. Most apps
+make that feel like an exam: red numbers, alerts, streaks. Honeycomb takes the opposite view.
+The reading is big and unjudged, the status is a quiet word beside it, colour only appears when
+something is actually off, and nothing nags. Your data sits in a plain file you own, on machines
+you own.
 
 ## What it does
 
