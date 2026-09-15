@@ -35,9 +35,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Honeycomb ${GITHUB_REF_NAME#v}" --generate-notes 2>/dev/null || true
-          for f in src-tauri/target/release/bundle/rpm/*.rpm src-tauri/target/release/bundle/deb/*.deb src-tauri/target/release/bundle/SHA256SUMS-linux; do
-            gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" "$f" || echo "$(basename "$f") already on the release, keeping the published copy"
+          uploaded=0
+          for f in src-tauri/target/release/bundle/rpm/*.rpm src-tauri/target/release/bundle/deb/*.deb; do
+            if gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" "$f"; then uploaded=1; else echo "$(basename "$f") already on the release, keeping the published copy"; fi
           done
+          # Checksums only make sense for the files this run actually published.
+          [ "$uploaded" = 1 ] && gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" src-tauri/target/release/bundle/SHA256SUMS-linux || true
 
   android:
     runs-on: ubuntu-22.04
@@ -82,6 +85,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Honeycomb ${GITHUB_REF_NAME#v}" --generate-notes 2>/dev/null || true
-          for f in src-tauri/target/release/bundle/android/*.apk src-tauri/target/release/bundle/android/SHA256SUMS-android; do
-            gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" "$f" || echo "$(basename "$f") already on the release, keeping the published copy"
+          uploaded=0
+          for f in src-tauri/target/release/bundle/android/*.apk; do
+            if gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" "$f"; then uploaded=1; else echo "$(basename "$f") already on the release, keeping the published copy"; fi
           done
+          [ "$uploaded" = 1 ] && gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" src-tauri/target/release/bundle/android/SHA256SUMS-android || true
