@@ -57,11 +57,25 @@ you own.
 
 ![Trends in dark mode](docs/screenshots/trends-dark.png)
 
-## Install on Linux
+## Install
 
-Prebuilt packages are produced by the build below as `.rpm` and `.deb`. To build from source you
-need Node 20 or newer, [pnpm](https://pnpm.io), a Rust toolchain, and the WebKitGTK development
-packages that [Tauri 2 requires](https://v2.tauri.app/start/prerequisites/#linux).
+Packages for each release are on the [Releases page](https://github.com/Gingerbreadfork/honeycomb/releases):
+an `.rpm` for Fedora and friends, a `.deb` for Ubuntu and Debian, and an `.apk` for arm64 Android
+phones, with a `SHA256SUMS` file alongside.
+
+```sh
+sudo dnf install ./Honeycomb-<version>.x86_64.rpm     # Fedora
+sudo apt install ./Honeycomb_<version>_amd64.deb      # Ubuntu, Debian
+adb install Honeycomb-<version>-arm64.apk             # Android, or copy the file to the phone
+```
+
+The Android package is signed with the project's own key, so the phone will ask you to allow
+installing from this source.
+
+### From source
+
+You need Node 20 or newer, [pnpm](https://pnpm.io), a Rust toolchain, and the WebKitGTK
+development packages that [Tauri 2 requires](https://v2.tauri.app/start/prerequisites/#linux).
 
 ```sh
 git clone https://github.com/Gingerbreadfork/honeycomb
@@ -138,6 +152,13 @@ pnpm test                 # vitest
 cargo test --manifest-path src-tauri/Cargo.toml
 pnpm tauri android dev    # run on a connected device or emulator
 ```
+
+### Releasing
+
+Pushing a tag like `v0.2.0` runs the release workflow, which builds the Linux packages and
+attaches them to a GitHub release. The Android job also runs if the repository has two secrets:
+`ANDROID_KEYSTORE_BASE64` (the signing keystore, base64 encoded) and `ANDROID_KEYSTORE_PASS`.
+Without them, build the APK locally with `./android-build.sh` and upload it by hand.
 
 `HONEYCOMB_PROFILE=name` runs a separate copy with its own data and no single-instance lock, which
 is handy for testing sync between two instances on one machine.
