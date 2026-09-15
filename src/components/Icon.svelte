@@ -33,6 +33,10 @@
     <path d="M3 8.5l3 3 7-7" />
   {:else if name === 'chevron-down'}
     <path d="M4 6l4 4 4-4" />
+  {:else if name === 'chevron-left'}
+    <path d="M10 3.5L5.5 8l4.5 4.5" />
+  {:else if name === 'chevron-right'}
+    <path d="M6 3.5L10.5 8 6 12.5" />
   {:else if name === 'clock'}
     <circle cx="8" cy="8" r="6" />
     <path d="M8 4.5V8l2.3 1.5" />

@@ -4,32 +4,31 @@
   import { contextLabel, formatValue, STATUS_LABEL, statusOf, toneOf } from '../lib/glucose';
   import { copyText, exportFile, isMobile, pickSavePath } from '../lib/platform';
   import { computeStats, filterRange, groupByDay } from '../lib/stats';
-  import { addDays, dateInputValue, dayKey, fmtDateTime, fmtLongDate, fmtRange, fmtShortDate, fmtTime, fmtWeekday, fromInputs, startOfDay } from '../lib/time';
+  import { addDays, dayKey, fmtDateTime, fmtLongDate, fmtRange, fmtShortDate, fmtTime, fmtWeekday } from '../lib/time';
   import Icon from '../components/Icon.svelte';
   import RangeBar from '../components/charts/RangeBar.svelte';
   import ReadingsChart from '../components/charts/ReadingsChart.svelte';
+  import RangePicker from '../components/RangePicker.svelte';
+  import { RangeState } from '../lib/range.svelte';
 
-  const presets = [7, 14, 30, 90];
-  let days = $state(30);
-  let custom = $state(false);
-  let fromText = $state(dateInputValue(addDays(new Date(), -29)));
-  let toText = $state(dateInputValue(new Date()));
+  const range = new RangeState(30);
 
   const unit = $derived(app.settings.unit);
   const targets = $derived(app.settings.targets);
-  const from = $derived.by(() => {
-    if (custom) return fromInputs(fromText, '00:00') ?? startOfDay(addDays(app.now, -29));
-    return startOfDay(addDays(app.now, -(days - 1)));
-  });
-  const to = $derived.by(() => {
-    if (custom) return addDays(fromInputs(toText, '00:00') ?? startOfDay(app.now), 1);
-    return addDays(startOfDay(app.now), 1);
-  });
+  const resolved = $derived(range.resolve(app.now, app.readings));
+  const from = $derived(resolved.from);
+  const to = $derived(resolved.to);
   const last = $derived(addDays(to, -1));
-  const spanDays = $derived(Math.max(1, Math.round((to.getTime() - from.getTime()) / 864e5)));
+  const spanDays = $derived(resolved.spanDays);
   const rows = $derived(filterRange(app.readings, from, to));
   const stats = $derived(computeStats(rows, targets, spanDays));
   const groups = $derived(groupByDay(rows).reverse());
+  const newest = $derived(app.readings.length ? app.readings[app.readings.length - 1].time : null);
+  const emptyButOlder = $derived(rows.length === 0 && newest !== null);
+
+  function showLatest(): void {
+    if (newest) range.setCustom(addDays(newest, -29), newest);
+  }
 
   function summaryText(): string {
     const lines = [
@@ -90,22 +89,15 @@
         <h2 class="display">Report</h2>
         <p class="muted">A clean summary to bring to your appointment.</p>
       </div>
-      <div class="controls">
-        <div class="seg" role="group" aria-label="Period">
-          {#each presets as p (p)}
-            <button type="button" aria-pressed={!custom && days === p} onclick={() => { custom = false; days = p; }}>{p} days</button>
-          {/each}
-          <button type="button" aria-pressed={custom} onclick={() => (custom = true)}>Custom</button>
-        </div>
-        {#if custom}
-          <div class="dates">
-            <input class="field tnum" type="date" bind:value={fromText} aria-label="From" />
-            <span class="muted">to</span>
-            <input class="field tnum" type="date" bind:value={toText} aria-label="To" />
-          </div>
-        {/if}
-      </div>
+      <RangePicker {range} {resolved} />
     </header>
+
+    {#if emptyButOlder && newest}
+      <div class="notice">
+        <span>No readings in this period. The latest is from {fmtLongDate(newest)}.</span>
+        <button type="button" class="btn small" onclick={showLatest}>Use the latest 30 days</button>
+      </div>
+    {/if}
 
     <div class="actions">
       {#if isMobile}
@@ -240,21 +232,23 @@
     font-size: 13px;
     margin-top: 2px;
   }
-  .controls {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-  }
-  .dates {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
   .actions {
     display: flex;
     gap: 8px;
     margin: 18px 0 22px;
+  }
+  .notice {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 16px;
+    padding: 12px 14px;
+    border-radius: var(--radius);
+    background: var(--card-2);
+    font-size: 13.5px;
+    color: var(--ink-2);
   }
 
   .sheet {

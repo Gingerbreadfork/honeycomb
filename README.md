@@ -34,9 +34,9 @@ you own.
 - **Honest feedback.** As you type, the app tells you whether the reading is in range, high, low,
   or very high, in words, not just colours. Nothing shouts.
 - **Trends.** Average, time in range, estimated A1c, lowest and highest, variability, and fasting
-  average over 7, 14, 30, or 90 days, each compared with the period before. A readings chart with
-  the target band, time in range by day or week, and a time-of-day view that shows when your
-  levels tend to run high.
+  average over 7, 14, 30, or 90 days, each compared with the period before. Step back through
+  earlier periods with the arrows, or pick any two dates. A readings chart with the target band,
+  time in range by day or week, and a time-of-day view that shows when your levels tend to run high.
 - **A report for your doctor.** A printable sheet with the summary figures, chart, and a table of
   every reading. Save it as a PDF, export a CSV, or copy a plain-text summary.
 - **Your data stays yours.** Readings are stored as CSV in `~/.local/share/honeycomb/readings.csv`.

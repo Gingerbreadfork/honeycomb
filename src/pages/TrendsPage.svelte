@@ -2,40 +2,32 @@
   import { app } from '../lib/store.svelte';
   import { formatSigned, formatValue } from '../lib/glucose';
   import { computeStats, filterRange, tirBuckets } from '../lib/stats';
-  import { addDays, fmtDateTime, fmtRange, startOfDay } from '../lib/time';
+  import { addDays, fmtDateTime, fmtLongDate, fmtRange } from '../lib/time';
   import ReadingsChart from '../components/charts/ReadingsChart.svelte';
   import DayPatternChart from '../components/charts/DayPatternChart.svelte';
   import RangeBar from '../components/charts/RangeBar.svelte';
   import RangeColumns from '../components/charts/RangeColumns.svelte';
   import StatTile from '../components/charts/StatTile.svelte';
-  import { isMobile } from '../lib/platform';
+  import RangePicker from '../components/RangePicker.svelte';
+  import { RangeState } from '../lib/range.svelte';
 
-  const ranges = [
-    { d: 7, label: '7 days' },
-    { d: 14, label: '14 days' },
-    { d: 30, label: '30 days' },
-    { d: 90, label: '90 days' },
-    { d: 0, label: 'All' },
-  ];
-  let days = $state(14);
+  const range = new RangeState(14);
 
   const unit = $derived(app.settings.unit);
   const targets = $derived(app.settings.targets);
-  const to = $derived(addDays(startOfDay(app.now), 1));
-  const from = $derived.by(() => {
-    if (days) return startOfDay(addDays(app.now, -(days - 1)));
-    const first = app.readings[0];
-    return first ? startOfDay(first.time) : startOfDay(addDays(app.now, -6));
-  });
-  const spanDays = $derived(Math.max(1, Math.round((to.getTime() - from.getTime()) / 864e5)));
+  const resolved = $derived(range.resolve(app.now, app.readings));
+  const from = $derived(resolved.from);
+  const to = $derived(resolved.to);
+  const spanDays = $derived(resolved.spanDays);
+  const days = $derived(range.custom ? 0 : range.days);
   const current = $derived(filterRange(app.readings, from, to));
-  const previous = $derived(days ? filterRange(app.readings, addDays(from, -spanDays), from) : []);
+  const previous = $derived(range.custom || days ? filterRange(app.readings, addDays(from, -spanDays), from) : []);
   const stats = $derived(computeStats(current, targets, spanDays));
   const prev = $derived(computeStats(previous, targets, spanDays));
   const byWeek = $derived(spanDays > 21);
   const buckets = $derived(tirBuckets(current, targets, from, to, byWeek));
 
-  const prevLabel = $derived(days ? `vs previous ${days} days` : '');
+  const prevLabel = $derived(range.custom ? `vs previous ${spanDays} days` : days ? `vs previous ${days} days` : '');
   const avgDelta = $derived(
     stats.mean !== null && prev.mean !== null ? formatSigned(stats.mean - prev.mean, unit) : '',
   );
@@ -45,6 +37,8 @@
     return d === 0 ? '0 pts' : `${d > 0 ? '+' : '−'}${Math.abs(d)} pts`;
   });
   const perDay = $derived(stats.perDay >= 10 ? Math.round(stats.perDay) : Math.round(stats.perDay * 10) / 10);
+  const newest = $derived(app.readings.length ? app.readings[app.readings.length - 1].time : null);
+  const emptyButOlder = $derived((range.custom || days !== 0) && current.length === 0 && newest !== null);
 </script>
 
 <div class="trends">
@@ -56,12 +50,16 @@
           {fmtRange(from, addDays(to, -1))}, {stats.count} reading{stats.count === 1 ? '' : 's'}
         </p>
       </div>
-      <div class="seg" role="group" aria-label="Period">
-        {#each ranges as r (r.d)}
-          <button type="button" aria-pressed={days === r.d} onclick={() => (days = r.d)}>{isMobile ? r.label.replace(' days', 'd') : r.label}</button>
-        {/each}
-      </div>
+      <RangePicker {range} {resolved} />
     </header>
+
+    {#if emptyButOlder && newest}
+      <div class="notice">
+        <span>No readings in this period. The latest is from {fmtLongDate(newest)}.</span>
+        <button type="button" class="btn small" onclick={() => range.setCustom(addDays(newest, -29), newest)}>Latest 30 days</button>
+        <button type="button" class="btn small ghost" onclick={() => range.setPreset(0)}>Show all</button>
+      </div>
+    {/if}
 
     <div class="tiles">
       <StatTile
@@ -148,6 +146,19 @@
   .top p {
     font-size: 13px;
     margin-top: 2px;
+  }
+  .notice {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 18px;
+    padding: 12px 14px;
+    border-radius: var(--radius);
+    background: var(--card-2);
+    font-size: 13.5px;
+    color: var(--ink-2);
   }
   .tiles {
     display: grid;

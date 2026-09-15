@@ -2,28 +2,39 @@
   import { app } from '../lib/store.svelte';
   import { formatValue } from '../lib/glucose';
   import { computeStats, filterRange } from '../lib/stats';
-  import { addDays, startOfDay } from '../lib/time';
+  import { addDays, fmtRange, startOfDay } from '../lib/time';
   import EntryPanel from '../components/EntryPanel.svelte';
   import ReadingList from '../components/ReadingList.svelte';
   import ReadingsChart from '../components/charts/ReadingsChart.svelte';
 
-  let showDays = $state(30);
+  let limit = $state(60);
 
   const unit = $derived(app.settings.unit);
   const targets = $derived(app.settings.targets);
-  const from = $derived(startOfDay(addDays(app.now, -6)));
-  const to = $derived(addDays(startOfDay(app.now), 1));
+  const newest = $derived(app.readings.length ? app.readings[app.readings.length - 1].time : null);
+  const thisWeekFrom = $derived(startOfDay(addDays(app.now, -6)));
+  const stale = $derived(newest !== null && newest < thisWeekFrom);
+  const anchor = $derived(stale && newest ? newest : app.now);
+  const from = $derived(startOfDay(addDays(anchor, -6)));
+  const to = $derived(addDays(startOfDay(anchor), 1));
   const week = $derived(filterRange(app.readings, from, to));
   const stats = $derived(computeStats(week, targets, 7));
 
-  const listFrom = $derived(startOfDay(addDays(app.now, -(showDays - 1))));
-  const listed = $derived(app.readings.filter((r) => r.time >= listFrom));
+  // The newest `limit` readings, extended to the start of the oldest day shown so no day is cut in half.
+  const listed = $derived.by(() => {
+    const all = app.readings;
+    if (all.length <= limit) return all;
+    const cutoff = startOfDay(all[all.length - limit].time).getTime();
+    return all.filter((r) => r.time.getTime() >= cutoff);
+  });
   const olderCount = $derived(app.readings.length - listed.length);
 
+  const heading = $derived(stale ? 'Latest week' : 'This week');
   const summary = $derived.by(() => {
     if (!stats.count || stats.mean === null || !stats.tir) return 'No readings yet this week';
     const pct = Math.round(stats.tir.inRange * 100);
-    return `${stats.count} reading${stats.count === 1 ? '' : 's'}, average ${formatValue(stats.mean, unit)} ${unit}, ${pct}% in range`;
+    const counts = `${stats.count} reading${stats.count === 1 ? '' : 's'}, average ${formatValue(stats.mean, unit)} ${unit}, ${pct}% in range`;
+    return stale ? `${fmtRange(from, addDays(to, -1))}. ${counts}` : counts;
   });
 </script>
 
@@ -35,7 +46,7 @@
     <div class="scroll">
       <header class="week">
         <div>
-          <h2 class="display">This week</h2>
+          <h2 class="display">{heading}</h2>
           <p class="muted">{summary}</p>
         </div>
         <button type="button" class="btn small ghost" onclick={() => (app.page = 'trends')}>See trends</button>
@@ -47,7 +58,7 @@
         {#if app.readings.length}
           <ReadingList readings={listed} />
           {#if olderCount > 0}
-            <button type="button" class="btn ghost more" onclick={() => (showDays += 30)}>
+            <button type="button" class="btn ghost more" onclick={() => (limit += 60)}>
               Show older readings ({olderCount})
             </button>
           {/if}
