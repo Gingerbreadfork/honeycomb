@@ -35,10 +35,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Honeycomb ${GITHUB_REF_NAME#v}" --generate-notes 2>/dev/null || true
-          gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber \
-            src-tauri/target/release/bundle/rpm/*.rpm \
-            src-tauri/target/release/bundle/deb/*.deb \
-            src-tauri/target/release/bundle/SHA256SUMS-linux
+          for f in src-tauri/target/release/bundle/rpm/*.rpm src-tauri/target/release/bundle/deb/*.deb src-tauri/target/release/bundle/SHA256SUMS-linux; do
+            gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" "$f" || echo "$(basename "$f") already on the release, keeping the published copy"
+          done
 
   android:
     runs-on: ubuntu-22.04
@@ -83,6 +82,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Honeycomb ${GITHUB_REF_NAME#v}" --generate-notes 2>/dev/null || true
-          gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber \
-            src-tauri/target/release/bundle/android/*.apk \
-            src-tauri/target/release/bundle/android/SHA256SUMS-android
+          for f in src-tauri/target/release/bundle/android/*.apk src-tauri/target/release/bundle/android/SHA256SUMS-android; do
+            gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" "$f" || echo "$(basename "$f") already on the release, keeping the published copy"
+          done
