@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="cell" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b2926"/>
+      <stop offset="1" stop-color="#141312"/>
+    </linearGradient>
+    <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e9b640" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#e9b640" stop-opacity="0.18"/>
+    </linearGradient>
+    <linearGradient id="honey" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f6cc5e"/>
+      <stop offset="0.55" stop-color="#e9b640"/>
+      <stop offset="1" stop-color="#cf8f16"/>
+    </linearGradient>
+    <radialGradient id="gloss" cx="0.34" cy="0.42" r="0.42">
+      <stop offset="0" stop-color="#fff4d6" stop-opacity="0.9"/>
+      <stop offset="0.45" stop-color="#fff4d6" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#fff4d6" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <polygon points="512,72 893,292 893,732 512,952 131,732 131,292" fill="url(#cell)" stroke="url(#cell)" stroke-width="56" stroke-linejoin="round"/>
+  <polygon points="512,72 893,292 893,732 512,952 131,732 131,292" fill="none" stroke="url(#wall)" stroke-width="14" stroke-linejoin="round"/>
+  <polygon points="512,158 819,335 819,689 512,866 205,689 205,335" fill="none" stroke="#e9b640" stroke-opacity="0.1" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M512 268 C 556 380, 700 470, 700 606 A188 188 0 0 1 324 606 C 324 470, 468 380, 512 268 Z" fill="url(#honey)"/>
+  <path d="M512 268 C 556 380, 700 470, 700 606 A188 188 0 0 1 324 606 C 324 470, 468 380, 512 268 Z" fill="url(#gloss)"/>
+</svg>

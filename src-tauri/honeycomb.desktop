@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Honeycomb
+Comment=A calm blood glucose journal
+Exec=honeycomb
+Icon=honeycomb
+Terminal=false
+Categories=Utility;MedicalSoftware;
+Keywords=glucose;blood sugar;diabetes;journal;log;
+StartupWMClass=honeycomb

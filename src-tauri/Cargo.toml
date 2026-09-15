@@ -1,0 +1,48 @@
+[package]
+name = "honeycomb"
+version = "0.1.0"
+description = "A calm blood glucose journal"
+authors = ["gingerbreadfork"]
+license = "MIT"
+edition = "2021"
+rust-version = "1.91"
+
+[lib]
+name = "honeycomb_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-fs = "2"
+iroh = "1.2.0"
+iroh-mdns-address-lookup = "0.5.0"
+postcard = "1"
+data-encoding = "2.11.1"
+gethostname = "1"
+tokio = { version = "1.53.1", features = ["time", "sync", "io-util", "macros"] }
+n0-future = "0.3.2"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-window-state = "2"
+tauri-plugin-single-instance = "2"
+
+[target.'cfg(target_os = "android")'.dependencies]
+android_logger = "0.15"
+log = "0.4"
+jni = "0.21"
+ndk-context = "0.1"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

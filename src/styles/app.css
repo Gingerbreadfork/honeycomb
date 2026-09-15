@@ -1,0 +1,481 @@
+@import '@fontsource-variable/atkinson-hyperlegible-next';
+@import '@fontsource-variable/bricolage-grotesque/standard.css';
+
+:root {
+  color-scheme: dark;
+
+  --font-ui: 'Atkinson Hyperlegible Next Variable', 'Atkinson Hyperlegible Next', 'Atkinson Hyperlegible', system-ui, sans-serif;
+  --font-display: 'Bricolage Grotesque Variable', 'Bricolage Grotesque', var(--font-ui);
+
+  --paper: oklch(16.5% 0.004 75);
+  --paper-2: oklch(19% 0.004 75);
+  --card: oklch(21% 0.005 75);
+  --card-2: oklch(25% 0.006 75);
+  --card-3: oklch(29% 0.007 75);
+  --line: oklch(25.5% 0.005 75);
+  --line-strong: oklch(33% 0.006 75);
+  --frame: oklch(100% 0 0 / 0.09);
+
+  --ink: oklch(94% 0.016 85);
+  --ink-2: oklch(72% 0.018 82);
+  --ink-3: oklch(55% 0.016 80);
+  --ink-4: oklch(40% 0.012 78);
+
+  --honey: oklch(78% 0.16 78);
+  --honey-strong: oklch(83% 0.16 82);
+  --honey-ink: oklch(22% 0.045 60);
+  --honey-soft: oklch(78% 0.16 78 / 0.14);
+  --band-fill: oklch(94% 0.016 85 / 0.055);
+  --band-edge: oklch(78% 0.16 78 / 0.38);
+  --mesh-opacity: 0.075;
+
+  --in: var(--ink);
+  --low: #997fde;
+  --low-soft: oklch(66% 0.14 295 / 0.15);
+  --high: #d67523;
+  --high-soft: oklch(66% 0.15 55 / 0.15);
+  --very-high: #cf284d;
+
+  --accent: var(--honey);
+  --accent-strong: var(--honey-strong);
+  --accent-ink: var(--honey-ink);
+  --accent-soft: var(--honey-soft);
+  --focus: oklch(78% 0.16 78 / 0.6);
+
+  --danger-text: oklch(78% 0.1 40);
+
+  --popover: oklch(23% 0.005 75);
+  --popover-line: oklch(32% 0.006 75);
+  --shadow-pop: 0 1px 2px oklch(0% 0 0 / 0.35), 0 12px 32px -6px oklch(0% 0 0 / 0.55), 0 0 0 1px oklch(100% 0 0 / 0.06);
+  --shadow-modal: 0 2px 6px oklch(0% 0 0 / 0.35), 0 32px 80px -12px oklch(0% 0 0 / 0.65), 0 0 0 1px oklch(100% 0 0 / 0.08);
+  --shadow-card: 0 1px 0 oklch(100% 0 0 / 0.03) inset, 0 0 0 1px oklch(0% 0 0 / 0.25);
+  --scrim: oklch(0% 0 0 / 0.5);
+
+  --radius-window: 12px;
+  --radius-lg: 16px;
+  --radius: 10px;
+  --radius-sm: 7px;
+
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-spring: cubic-bezier(0.3, 1.25, 0.5, 1);
+  --t-fast: 100ms;
+  --t-med: 180ms;
+  --t-slow: 320ms;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    color-scheme: light;
+    --paper: oklch(94.5% 0.022 88);
+    --paper-2: oklch(92% 0.024 87);
+    --card: oklch(98.5% 0.012 92);
+    --card-2: oklch(91.5% 0.026 86);
+    --card-3: oklch(88% 0.028 85);
+    --line: oklch(87% 0.024 86);
+    --line-strong: oklch(78% 0.026 84);
+    --frame: oklch(0% 0 0 / 0.14);
+
+    --ink: oklch(27% 0.035 60);
+    --ink-2: oklch(47% 0.035 65);
+    --ink-3: oklch(60% 0.03 70);
+    --ink-4: oklch(78% 0.024 80);
+
+    --honey: oklch(64% 0.15 74);
+    --honey-strong: oklch(58% 0.15 72);
+    --honey-ink: oklch(20% 0.04 60);
+    --honey-soft: oklch(64% 0.15 74 / 0.14);
+    --band-fill: oklch(64% 0.15 74 / 0.12);
+    --band-edge: oklch(64% 0.15 74 / 0.3);
+    --mesh-opacity: 0.16;
+
+    --in: var(--ink);
+    --low: #7b57c8;
+    --low-soft: oklch(55% 0.17 295 / 0.13);
+    --high: #c9690c;
+    --high-soft: oklch(62% 0.15 55 / 0.14);
+    --very-high: #bb061e;
+
+    --accent: var(--honey);
+    --accent-strong: var(--honey-strong);
+    --accent-ink: var(--honey-ink);
+    --accent-soft: var(--honey-soft);
+    --focus: oklch(64% 0.15 74 / 0.55);
+
+    --danger-text: oklch(52% 0.14 35);
+
+    --popover: oklch(99% 0.01 92);
+    --popover-line: oklch(86% 0.024 86);
+    --shadow-pop: 0 1px 2px oklch(30% 0.04 70 / 0.08), 0 12px 32px -6px oklch(30% 0.04 70 / 0.22), 0 0 0 1px oklch(30% 0.04 70 / 0.08);
+    --shadow-modal: 0 2px 6px oklch(30% 0.04 70 / 0.08), 0 32px 80px -12px oklch(30% 0.04 70 / 0.3), 0 0 0 1px oklch(30% 0.04 70 / 0.08);
+    --shadow-card: 0 1px 2px oklch(30% 0.04 70 / 0.05), 0 0 0 1px oklch(30% 0.04 70 / 0.07);
+    --scrim: oklch(30% 0.04 70 / 0.3);
+  }
+}
+
+:root[data-theme='light'],
+.sheet {
+  color-scheme: light;
+  --paper: oklch(94.5% 0.022 88);
+  --paper-2: oklch(92% 0.024 87);
+  --card: oklch(98.5% 0.012 92);
+  --card-2: oklch(91.5% 0.026 86);
+  --card-3: oklch(88% 0.028 85);
+  --line: oklch(87% 0.024 86);
+  --line-strong: oklch(78% 0.026 84);
+  --frame: oklch(0% 0 0 / 0.14);
+
+  --ink: oklch(27% 0.035 60);
+  --ink-2: oklch(47% 0.035 65);
+  --ink-3: oklch(60% 0.03 70);
+  --ink-4: oklch(78% 0.024 80);
+
+  --honey: oklch(64% 0.15 74);
+  --honey-strong: oklch(58% 0.15 72);
+  --honey-ink: oklch(20% 0.04 60);
+  --honey-soft: oklch(64% 0.15 74 / 0.14);
+  --band-fill: oklch(64% 0.15 74 / 0.12);
+  --band-edge: oklch(64% 0.15 74 / 0.3);
+  --mesh-opacity: 0.16;
+
+  --in: var(--ink);
+  --low: #7b57c8;
+  --low-soft: oklch(55% 0.17 295 / 0.13);
+  --high: #c9690c;
+  --high-soft: oklch(62% 0.15 55 / 0.14);
+  --very-high: #bb061e;
+
+  --accent: var(--honey);
+  --accent-strong: var(--honey-strong);
+  --accent-ink: var(--honey-ink);
+  --accent-soft: var(--honey-soft);
+  --focus: oklch(64% 0.15 74 / 0.55);
+
+  --danger-text: oklch(52% 0.14 35);
+
+  --popover: oklch(99% 0.01 92);
+  --popover-line: oklch(86% 0.024 86);
+  --shadow-pop: 0 1px 2px oklch(30% 0.04 70 / 0.08), 0 12px 32px -6px oklch(30% 0.04 70 / 0.22), 0 0 0 1px oklch(30% 0.04 70 / 0.08);
+  --shadow-modal: 0 2px 6px oklch(30% 0.04 70 / 0.08), 0 32px 80px -12px oklch(30% 0.04 70 / 0.3), 0 0 0 1px oklch(30% 0.04 70 / 0.08);
+  --shadow-card: 0 1px 2px oklch(30% 0.04 70 / 0.05), 0 0 0 1px oklch(30% 0.04 70 / 0.07);
+  --scrim: oklch(30% 0.04 70 / 0.3);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.45;
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+  margin: 0;
+}
+
+button {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+input,
+textarea {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+.display {
+  font-family: var(--font-display);
+  font-variation-settings: 'opsz' 40, 'wdth' 100;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.12;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+  background: var(--card-2);
+  color: var(--ink);
+  transition: background var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-out);
+  white-space: nowrap;
+}
+
+.btn:hover {
+  background: var(--card-3);
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn.primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.btn.primary:hover {
+  background: var(--accent-strong);
+}
+
+.btn.ghost {
+  background: transparent;
+  color: var(--ink-2);
+}
+
+.btn.ghost:hover {
+  background: var(--card-2);
+  color: var(--ink);
+}
+
+.btn.small {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.field {
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+  transition: border-color var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out);
+}
+
+.field:hover {
+  border-color: var(--ink-4);
+}
+
+.field:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+textarea.field {
+  height: auto;
+  padding: 8px 10px;
+  resize: none;
+}
+
+.seg {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  background: var(--paper-2);
+  border-radius: 9px;
+}
+
+.seg button {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 6px;
+  color: var(--ink-2);
+  font-weight: 500;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+
+.seg button:hover {
+  color: var(--ink);
+}
+
+.seg button[aria-pressed='true'],
+.seg button[aria-selected='true'] {
+  background: var(--card-2);
+  color: var(--ink);
+  box-shadow: 0 1px 2px oklch(0% 0 0 / 0.2);
+}
+
+.dot {
+  display: inline-block;
+  width: 9px;
+  height: 10px;
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+  background: var(--ink-3);
+  flex: none;
+}
+
+.dot.in {
+  background: var(--in);
+}
+
+.dot.low {
+  background: var(--low);
+}
+
+.dot.high {
+  background: var(--high);
+}
+
+.dot.very-high {
+  background: var(--very-high);
+}
+
+.dot.in {
+  opacity: 0.9;
+}
+
+.muted {
+  color: var(--ink-2);
+}
+
+.faint {
+  color: var(--ink-3);
+}
+
+.app.mobile .btn {
+  height: 40px;
+  padding: 0 16px;
+  font-size: 15px;
+}
+
+.app.mobile .btn.small {
+  height: 36px;
+  padding: 0 12px;
+  font-size: 14px;
+}
+
+.app.mobile .seg button {
+  height: 34px;
+  padding: 0 11px;
+}
+
+.app.mobile .field {
+  height: 40px;
+  font-size: 16px;
+}
+
+.app.mobile body,
+.app.mobile {
+  font-size: 15px;
+}
+
+.app.mobile * {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media print {
+  @page {
+    margin: 14mm;
+  }
+  html,
+  body,
+  #app {
+    height: auto;
+    overflow: visible;
+    background: #fff;
+  }
+  body {
+    color: #231e19;
+  }
+}

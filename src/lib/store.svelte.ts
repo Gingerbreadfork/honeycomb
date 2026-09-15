@@ -1,0 +1,267 @@
+import { readingsFromCsv, readingsToCsv, newId } from './csv';
+import { DEFAULT_TARGETS, type Context, type Reading, type Targets, type Unit } from './glucose';
+import { appPaths, fileMtime, quitApp, readText, setBackgroundMode, writeText, win, isTauri, type AppPaths } from './platform';
+import { SyncState } from './sync.svelte';
+import { planImport, type ImportPlan } from './import';
+import { pickCsvText } from './platform';
+import { setHour12, systemHour12 } from './time';
+
+export type Page = 'log' | 'trends' | 'report';
+export type Theme = 'system' | 'light' | 'dark';
+export type Clock = 'system' | '12h' | '24h';
+
+export interface Settings {
+  unit: Unit;
+  targets: Targets;
+  dataFile: string | null;
+  name: string;
+  theme: Theme;
+  clock: Clock;
+  background: boolean;
+}
+
+export interface Toast {
+  id: number;
+  text: string;
+  action?: { label: string; run: () => void };
+}
+
+export interface ReadingInput {
+  time: Date;
+  mmol: number;
+  context: Context;
+  note: string;
+}
+
+const DEFAULTS: Settings = {
+  unit: 'mmol/L',
+  targets: { ...DEFAULT_TARGETS },
+  dataFile: null,
+  name: '',
+  theme: 'system',
+  clock: 'system',
+  background: false,
+};
+
+function guessUnit(): Unit {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
+    const region = new Intl.Locale(navigator.language).maximize().region ?? '';
+    const mgdl = ['US', 'IN', 'DE', 'AT', 'FR', 'BE', 'IT', 'ES', 'PL', 'JP', 'KR', 'IL', 'MX', 'BR', 'AR', 'CL', 'CO', 'EG', 'TR'];
+    if (tz.startsWith('America/') && !tz.includes('Toronto') && !tz.includes('Vancouver')) return 'mg/dL';
+    if (tz.startsWith('Australia/') || tz.startsWith('Europe/London') || tz.startsWith('Pacific/Auckland')) return 'mmol/L';
+    return mgdl.includes(region) ? 'mg/dL' : 'mmol/L';
+  } catch {
+    return 'mmol/L';
+  }
+}
+
+class Store {
+  settings = $state<Settings>({ ...DEFAULTS });
+  rows = $state.raw<Reading[]>([]);
+  readings = $derived(this.rows.filter((r) => !r.deleted));
+  sync = new SyncState();
+  page = $state<Page>('log');
+  ready = $state(false);
+  loadError = $state<string | null>(null);
+  toasts = $state<Toast[]>([]);
+  settingsOpen = $state(false);
+  editing = $state<Reading | null>(null);
+  importing = $state<{ name: string; plan: ImportPlan } | null>(null);
+  maximized = $state(false);
+  now = $state(new Date());
+  lastSaved = $state<Reading | null>(null);
+
+  paths = $state<AppPaths | null>(null);
+  dataPath = $derived(this.settings.dataFile ?? this.paths?.data_file ?? '');
+
+  private fileMtime: number | null = null;
+  private toastSeq = 0;
+  private queue: Promise<void> = Promise.resolve();
+
+  async init(): Promise<void> {
+    this.paths = await appPaths();
+    await this.loadSettings();
+    this.applyTheme();
+    this.applyClock();
+    await this.loadReadings();
+    this.ready = true;
+    setInterval(() => (this.now = new Date()), 15_000);
+    win.onResized(async () => (this.maximized = await win.isMaximized()));
+    this.maximized = await win.isMaximized();
+    window.addEventListener('focus', () => {
+      void this.checkExternalChange();
+      this.sync.syncNow();
+    });
+    void setBackgroundMode(this.settings.background);
+    this.sync.onRows = (rows) => this.applySynced(rows);
+    this.sync.onPulled = (from, changed) => this.toast(`${changed} reading${changed === 1 ? '' : 's'} from ${from}`);
+    this.sync.onPaired = (device) => this.toast(`Paired with ${device.name}`);
+    await this.sync.init();
+    this.sync.push(this.rows);
+  }
+
+  /** Replaces local rows with the merged set from the sync engine and writes it to disk. */
+  private applySynced(rows: Reading[]): void {
+    this.rows = [...rows].sort((a, b) => a.time.getTime() - b.time.getTime());
+    void this.persist(false);
+  }
+
+  private async loadSettings(): Promise<void> {
+    if (!this.paths) return;
+    try {
+      const text = await readText(this.paths.settings_file);
+      if (text) {
+        const parsed = JSON.parse(text) as Partial<Settings>;
+        this.settings = { ...DEFAULTS, ...parsed, targets: { ...DEFAULTS.targets, ...(parsed.targets ?? {}) } };
+      } else {
+        this.settings = { ...DEFAULTS, unit: guessUnit() };
+        await this.persistSettings();
+      }
+    } catch (e) {
+      this.settings = { ...DEFAULTS, unit: guessUnit() };
+      this.toast(`Settings could not be read: ${String(e)}`);
+    }
+  }
+
+  private async persistSettings(): Promise<void> {
+    if (!this.paths) return;
+    await writeText(this.paths.settings_file, JSON.stringify(this.settings, null, 2) + '\n');
+  }
+
+  async updateSettings(patch: Partial<Settings>): Promise<void> {
+    const fileChanged = patch.dataFile !== undefined && patch.dataFile !== this.settings.dataFile;
+    this.settings = { ...this.settings, ...patch, targets: { ...this.settings.targets, ...(patch.targets ?? {}) } };
+    this.applyTheme();
+    this.applyClock();
+    await this.persistSettings();
+    if (patch.background !== undefined) void setBackgroundMode(this.settings.background);
+    if (fileChanged) await this.loadReadings();
+  }
+
+  applyTheme(): void {
+    const root = document.documentElement;
+    if (this.settings.theme === 'system') delete root.dataset.theme;
+    else root.dataset.theme = this.settings.theme;
+  }
+
+  applyClock(): void {
+    const c = this.settings.clock;
+    setHour12(c === 'system' ? systemHour12() : c === '12h');
+    this.now = new Date();
+  }
+
+  async loadReadings(): Promise<void> {
+    this.loadError = null;
+    try {
+      const text = await readText(this.dataPath);
+      this.rows = text ? readingsFromCsv(text, this.settings.unit) : [];
+      this.fileMtime = await fileMtime(this.dataPath);
+      if (this.ready) this.sync.push(this.rows);
+    } catch (e) {
+      this.rows = [];
+      this.loadError = String(e);
+    }
+  }
+
+  private async checkExternalChange(): Promise<void> {
+    if (!this.ready || !this.dataPath) return;
+    const m = await fileMtime(this.dataPath);
+    if (m !== this.fileMtime) {
+      await this.loadReadings();
+      if (m !== null) this.toast('Readings reloaded from file');
+    }
+  }
+
+  private persist(push = true): Promise<void> {
+    const snapshot = this.rows;
+    if (push) this.sync.push(snapshot);
+    this.queue = this.queue.then(async () => {
+      try {
+        this.fileMtime = await writeText(this.dataPath, readingsToCsv(snapshot));
+      } catch (e) {
+        this.toast(`Could not save: ${String(e)}`);
+      }
+    });
+    return this.queue;
+  }
+
+  add(input: ReadingInput): Reading {
+    const reading: Reading = { id: newId(), unit: this.settings.unit, updated: Date.now(), deleted: null, ...input };
+    this.rows = [...this.rows, reading].sort((a, b) => a.time.getTime() - b.time.getTime());
+    this.lastSaved = reading;
+    void this.persist();
+    return reading;
+  }
+
+  update(id: string, patch: Partial<Omit<Reading, 'id' | 'updated'>>): void {
+    this.rows = this.rows
+      .map((r) => (r.id === id ? { ...r, ...patch, updated: Date.now() } : r))
+      .sort((a, b) => a.time.getTime() - b.time.getTime());
+    void this.persist();
+  }
+
+  remove(id: string): void {
+    const removed = this.rows.find((r) => r.id === id);
+    if (!removed) return;
+    this.rows = this.rows.map((r) => (r.id === id ? { ...r, deleted: Date.now(), updated: Date.now() } : r));
+    if (this.lastSaved?.id === id) this.lastSaved = null;
+    void this.persist();
+    this.toast('Reading deleted', {
+      label: 'Undo',
+      run: () => {
+        this.rows = this.rows.map((r) => (r.id === id ? { ...r, deleted: null, updated: Date.now() } : r));
+        void this.persist();
+      },
+    });
+  }
+
+  /** Opens a CSV chooser and shows what an import would add. */
+  async chooseImport(): Promise<void> {
+    let picked: { name: string; text: string } | null = null;
+    try {
+      picked = await pickCsvText();
+    } catch (e) {
+      this.toast(`Couldn't open that file: ${String(e)}`);
+      return;
+    }
+    if (!picked) return;
+    this.previewImport(picked.name, picked.text);
+  }
+
+  previewImport(name: string, text: string): void {
+    const rows = readingsFromCsv(text, this.settings.unit);
+    this.importing = { name, plan: planImport(this.rows, rows) };
+  }
+
+  confirmImport(): void {
+    const job = this.importing;
+    if (!job) return;
+    this.importing = null;
+    if (!job.plan.add.length) return;
+    this.rows = [...this.rows, ...job.plan.add].sort((a, b) => a.time.getTime() - b.time.getTime());
+    void this.persist();
+    const n = job.plan.add.filter((r) => !r.deleted).length;
+    this.toast(`Imported ${n} reading${n === 1 ? '' : 's'}`);
+  }
+
+  toast(text: string, action?: Toast['action']): void {
+    const id = ++this.toastSeq;
+    this.toasts = [...this.toasts, { id, text, action }];
+    setTimeout(() => this.dismissToast(id), action ? 6000 : 3200);
+  }
+
+  dismissToast(id: number): void {
+    this.toasts = this.toasts.filter((t) => t.id !== id);
+  }
+
+  quit(): void {
+    if (isTauri) void quitApp();
+  }
+
+  closeWindow(): void {
+    if (isTauri) void win.close();
+  }
+}
+
+export const app = new Store();
