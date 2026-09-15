@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Honeycomb",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "identifier": "app.honeycomb",
   "build": {
     "frontendDist": "../dist",
@@ -14,10 +14,10 @@
       {
         "label": "main",
         "title": "Honeycomb",
-        "width": 1080,
-        "height": 720,
-        "minWidth": 720,
-        "minHeight": 540,
+        "width": 1180,
+        "height": 800,
+        "minWidth": 760,
+        "minHeight": 560,
         "center": true,
         "resizable": true,
         "decorations": false,

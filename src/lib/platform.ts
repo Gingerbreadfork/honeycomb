@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { writeText as clipWrite } from '@tauri-apps/plugin-clipboard-manager';
-import { revealItemInDir } from '@tauri-apps/plugin-opener';
+import { openUrl, revealItemInDir } from '@tauri-apps/plugin-opener';
 import { readTextFile } from '@tauri-apps/plugin-fs';
 
 export type ResizeDirection = 'East' | 'North' | 'NorthEast' | 'NorthWest' | 'South' | 'SouthEast' | 'SouthWest' | 'West';
@@ -97,6 +97,11 @@ export async function copyText(text: string): Promise<void> {
 
 export async function reveal(path: string): Promise<void> {
   if (isDesktop) await revealItemInDir(path);
+}
+
+export async function openLink(url: string): Promise<void> {
+  if (isTauri) await openUrl(url);
+  else window.open(url, '_blank', 'noopener');
 }
 
 export async function setBackgroundMode(on: boolean): Promise<void> {

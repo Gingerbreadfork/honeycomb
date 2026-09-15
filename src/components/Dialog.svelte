@@ -50,7 +50,7 @@
     if (e.target === e.currentTarget) onclose();
   }}
 >
-  <div class="dialog" class:sheet={isMobile} role="dialog" aria-modal="true" aria-label={title} style:width="{width}px" tabindex="-1" {@attach focusFirst}>
+  <div class="dialog" class:mobile-sheet={isMobile} role="dialog" aria-modal="true" aria-label={title} style:width="{width}px" tabindex="-1" {@attach focusFirst}>
     <header>
       <h2 class="display">{title}</h2>
       <button type="button" class="close" aria-label="Close" onclick={onclose}><Icon name="close" /></button>
@@ -78,7 +78,7 @@
     padding: 0;
     align-items: flex-end;
   }
-  .dialog.sheet {
+  .dialog.mobile-sheet {
     width: 100% !important;
     max-height: 92%;
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;

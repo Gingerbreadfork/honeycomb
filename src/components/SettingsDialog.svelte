@@ -5,6 +5,7 @@
   import Dialog from './Dialog.svelte';
   import Icon from './Icon.svelte';
   import DevicesSection from './DevicesSection.svelte';
+  import AboutSection from './AboutSection.svelte';
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -151,6 +152,8 @@
       </dl>
     </section>
     {/if}
+
+    <AboutSection />
   </div>
 </Dialog>
 

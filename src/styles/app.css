@@ -1,55 +1,57 @@
 @import '@fontsource-variable/atkinson-hyperlegible-next';
 @import '@fontsource-variable/bricolage-grotesque/standard.css';
 
+/* Colour tokens. Hex fallbacks first, then the oklch originals for engines that support them. */
 :root {
   color-scheme: dark;
 
   --font-ui: 'Atkinson Hyperlegible Next Variable', 'Atkinson Hyperlegible Next', 'Atkinson Hyperlegible', system-ui, sans-serif;
   --font-display: 'Bricolage Grotesque Variable', 'Bricolage Grotesque', var(--font-ui);
 
-  --paper: oklch(16.5% 0.004 75);
-  --paper-2: oklch(19% 0.004 75);
-  --card: oklch(21% 0.005 75);
-  --card-2: oklch(25% 0.006 75);
-  --card-3: oklch(29% 0.007 75);
-  --line: oklch(25.5% 0.005 75);
-  --line-strong: oklch(33% 0.006 75);
-  --frame: oklch(100% 0 0 / 0.09);
+  --paper: #0f0e0c;
+  --paper-2: #151412;
+  --card: #1a1816;
+  --card-2: #23211e;
+  --card-3: #2d2b28;
+  --line: #242220;
+  --line-strong: #373532;
+  --frame: rgba(255, 255, 255, 0.09);
 
-  --ink: oklch(94% 0.016 85);
-  --ink-2: oklch(72% 0.018 82);
-  --ink-3: oklch(55% 0.016 80);
-  --ink-4: oklch(40% 0.012 78);
+  --ink: #f0ebdf;
+  --ink-2: #aaa498;
+  --ink-3: #777167;
+  --ink-4: #4b4741;
 
-  --honey: oklch(78% 0.16 78);
-  --honey-strong: oklch(83% 0.16 82);
-  --honey-ink: oklch(22% 0.045 60);
-  --honey-soft: oklch(78% 0.16 78 / 0.14);
-  --band-fill: oklch(94% 0.016 85 / 0.055);
-  --band-edge: oklch(78% 0.16 78 / 0.38);
+  --honey: #efa810;
+  --honey-strong: #fbbb2d;
+  --honey-ink: #291503;
+  --honey-soft: rgba(239, 168, 16, 0.14);
+  --band-fill: rgba(240, 235, 223, 0.055);
+  --band-edge: rgba(239, 168, 16, 0.38);
   --mesh-opacity: 0.075;
 
   --in: var(--ink);
   --low: #997fde;
-  --low-soft: oklch(66% 0.14 295 / 0.15);
+  --low-soft: rgba(153, 127, 222, 0.15);
   --high: #d67523;
-  --high-soft: oklch(66% 0.15 55 / 0.15);
+  --high-soft: rgba(214, 117, 35, 0.15);
   --very-high: #cf284d;
 
   --accent: var(--honey);
   --accent-strong: var(--honey-strong);
   --accent-ink: var(--honey-ink);
   --accent-soft: var(--honey-soft);
-  --focus: oklch(78% 0.16 78 / 0.6);
+  --focus: rgba(239, 168, 16, 0.6);
 
-  --danger-text: oklch(78% 0.1 40);
+  --danger-text: #efa187;
 
-  --popover: oklch(23% 0.005 75);
-  --popover-line: oklch(32% 0.006 75);
-  --shadow-pop: 0 1px 2px oklch(0% 0 0 / 0.35), 0 12px 32px -6px oklch(0% 0 0 / 0.55), 0 0 0 1px oklch(100% 0 0 / 0.06);
-  --shadow-modal: 0 2px 6px oklch(0% 0 0 / 0.35), 0 32px 80px -12px oklch(0% 0 0 / 0.65), 0 0 0 1px oklch(100% 0 0 / 0.08);
-  --shadow-card: 0 1px 0 oklch(100% 0 0 / 0.03) inset, 0 0 0 1px oklch(0% 0 0 / 0.25);
-  --scrim: oklch(0% 0 0 / 0.5);
+  --seg-active: var(--card-2);
+  --popover: #1e1d1a;
+  --popover-line: #35322f;
+  --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.35), 0 12px 32px -6px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --shadow-modal: 0 2px 6px rgba(0, 0, 0, 0.35), 0 32px 80px -12px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 0 0 1px rgba(0, 0, 0, 0.25);
+  --scrim: rgba(0, 0, 0, 0.5);
 
   --radius-window: 12px;
   --radius-lg: 16px;
@@ -65,6 +67,217 @@
 
 @media (prefers-color-scheme: light) {
   :root:not([data-theme='dark']) {
+    color-scheme: light;
+    --paper: #f3ecdd;
+    --paper-2: #ebe4d3;
+    --card: #fdfaf1;
+    --card-2: #ebe2d0;
+    --card-3: #e0d6c3;
+    --line: #dbd3c3;
+    --line-strong: #bfb6a5;
+    --frame: rgba(0, 0, 0, 0.14);
+
+    --ink: #332214;
+    --ink-2: #695746;
+    --ink-3: #8c7d6d;
+    --ink-4: #c0b6a7;
+
+    --honey: #c17b00;
+    --honey-strong: #af6700;
+    --honey-ink: #231103;
+    --honey-soft: rgba(193, 123, 0, 0.14);
+    --band-fill: rgba(193, 123, 0, 0.12);
+    --band-edge: rgba(193, 123, 0, 0.3);
+    --mesh-opacity: 0.16;
+
+    --in: var(--ink);
+    --low: #7b57c8;
+    --low-soft: rgba(123, 87, 200, 0.13);
+    --high: #c9690c;
+    --high-soft: rgba(201, 105, 12, 0.14);
+    --very-high: #bb061e;
+
+    --accent: var(--honey);
+    --accent-strong: var(--honey-strong);
+    --accent-ink: var(--honey-ink);
+    --accent-soft: var(--honey-soft);
+    --focus: rgba(193, 123, 0, 0.55);
+
+    --danger-text: #aa442b;
+
+    --popover: #fefcf4;
+    --popover-line: #d8d0c0;
+    --shadow-pop: 0 1px 2px rgba(59, 42, 23, 0.08), 0 12px 32px -6px rgba(59, 42, 23, 0.22), 0 0 0 1px rgba(59, 42, 23, 0.08);
+    --shadow-modal: 0 2px 6px rgba(59, 42, 23, 0.08), 0 32px 80px -12px rgba(59, 42, 23, 0.3), 0 0 0 1px rgba(59, 42, 23, 0.08);
+    --shadow-card: 0 1px 2px rgba(59, 42, 23, 0.05), 0 0 0 1px rgba(59, 42, 23, 0.07);
+    --scrim: rgba(59, 42, 23, 0.3);
+  }
+}
+
+:root[data-theme='light'],
+.sheet {
+  color-scheme: light;
+  --paper: #f3ecdd;
+  --paper-2: #ebe4d3;
+  --card: #fdfaf1;
+  --card-2: #ebe2d0;
+  --card-3: #e0d6c3;
+  --line: #dbd3c3;
+  --line-strong: #bfb6a5;
+  --frame: rgba(0, 0, 0, 0.14);
+
+  --ink: #332214;
+  --ink-2: #695746;
+  --ink-3: #8c7d6d;
+  --ink-4: #c0b6a7;
+
+  --honey: #c17b00;
+  --honey-strong: #af6700;
+  --honey-ink: #231103;
+  --honey-soft: rgba(193, 123, 0, 0.14);
+  --band-fill: rgba(193, 123, 0, 0.12);
+  --band-edge: rgba(193, 123, 0, 0.3);
+  --mesh-opacity: 0.16;
+
+  --in: var(--ink);
+  --low: #7b57c8;
+  --low-soft: rgba(123, 87, 200, 0.13);
+  --high: #c9690c;
+  --high-soft: rgba(201, 105, 12, 0.14);
+  --very-high: #bb061e;
+
+  --accent: var(--honey);
+  --accent-strong: var(--honey-strong);
+  --accent-ink: var(--honey-ink);
+  --accent-soft: var(--honey-soft);
+  --focus: rgba(193, 123, 0, 0.55);
+
+  --danger-text: #aa442b;
+
+  --popover: #fefcf4;
+  --popover-line: #d8d0c0;
+  --shadow-pop: 0 1px 2px rgba(59, 42, 23, 0.08), 0 12px 32px -6px rgba(59, 42, 23, 0.22), 0 0 0 1px rgba(59, 42, 23, 0.08);
+  --shadow-modal: 0 2px 6px rgba(59, 42, 23, 0.08), 0 32px 80px -12px rgba(59, 42, 23, 0.3), 0 0 0 1px rgba(59, 42, 23, 0.08);
+  --shadow-card: 0 1px 2px rgba(59, 42, 23, 0.05), 0 0 0 1px rgba(59, 42, 23, 0.07);
+  --scrim: rgba(59, 42, 23, 0.3);
+}
+
+@supports (color: oklch(0% 0 0)) {
+  :root {
+    color-scheme: dark;
+
+    --font-ui: 'Atkinson Hyperlegible Next Variable', 'Atkinson Hyperlegible Next', 'Atkinson Hyperlegible', system-ui, sans-serif;
+    --font-display: 'Bricolage Grotesque Variable', 'Bricolage Grotesque', var(--font-ui);
+
+    --paper: oklch(16.5% 0.004 75);
+    --paper-2: oklch(19% 0.004 75);
+    --card: oklch(21% 0.005 75);
+    --card-2: oklch(25% 0.006 75);
+    --card-3: oklch(29% 0.007 75);
+    --line: oklch(25.5% 0.005 75);
+    --line-strong: oklch(33% 0.006 75);
+    --frame: oklch(100% 0 0 / 0.09);
+
+    --ink: oklch(94% 0.016 85);
+    --ink-2: oklch(72% 0.018 82);
+    --ink-3: oklch(55% 0.016 80);
+    --ink-4: oklch(40% 0.012 78);
+
+    --honey: oklch(78% 0.16 78);
+    --honey-strong: oklch(83% 0.16 82);
+    --honey-ink: oklch(22% 0.045 60);
+    --honey-soft: oklch(78% 0.16 78 / 0.14);
+    --band-fill: oklch(94% 0.016 85 / 0.055);
+    --band-edge: oklch(78% 0.16 78 / 0.38);
+    --mesh-opacity: 0.075;
+
+    --in: var(--ink);
+    --low: #997fde;
+    --low-soft: oklch(66% 0.14 295 / 0.15);
+    --high: #d67523;
+    --high-soft: oklch(66% 0.15 55 / 0.15);
+    --very-high: #cf284d;
+
+    --accent: var(--honey);
+    --accent-strong: var(--honey-strong);
+    --accent-ink: var(--honey-ink);
+    --accent-soft: var(--honey-soft);
+    --focus: oklch(78% 0.16 78 / 0.6);
+
+    --danger-text: oklch(78% 0.1 40);
+
+    --seg-active: var(--card-2);
+  --popover: oklch(23% 0.005 75);
+    --popover-line: oklch(32% 0.006 75);
+    --shadow-pop: 0 1px 2px oklch(0% 0 0 / 0.35), 0 12px 32px -6px oklch(0% 0 0 / 0.55), 0 0 0 1px oklch(100% 0 0 / 0.06);
+    --shadow-modal: 0 2px 6px oklch(0% 0 0 / 0.35), 0 32px 80px -12px oklch(0% 0 0 / 0.65), 0 0 0 1px oklch(100% 0 0 / 0.08);
+    --shadow-card: 0 1px 0 oklch(100% 0 0 / 0.03) inset, 0 0 0 1px oklch(0% 0 0 / 0.25);
+    --scrim: oklch(0% 0 0 / 0.5);
+
+    --radius-window: 12px;
+    --radius-lg: 16px;
+    --radius: 10px;
+    --radius-sm: 7px;
+
+    --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --ease-spring: cubic-bezier(0.3, 1.25, 0.5, 1);
+    --t-fast: 100ms;
+    --t-med: 180ms;
+    --t-slow: 320ms;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme='dark']) {
+      color-scheme: light;
+      --paper: oklch(94.5% 0.022 88);
+      --paper-2: oklch(92% 0.024 87);
+      --card: oklch(98.5% 0.012 92);
+      --card-2: oklch(91.5% 0.026 86);
+      --card-3: oklch(88% 0.028 85);
+      --line: oklch(87% 0.024 86);
+      --line-strong: oklch(78% 0.026 84);
+      --frame: oklch(0% 0 0 / 0.14);
+
+      --ink: oklch(27% 0.035 60);
+      --ink-2: oklch(47% 0.035 65);
+      --ink-3: oklch(60% 0.03 70);
+      --ink-4: oklch(78% 0.024 80);
+
+      --honey: oklch(64% 0.15 74);
+      --honey-strong: oklch(58% 0.15 72);
+      --honey-ink: oklch(20% 0.04 60);
+      --honey-soft: oklch(64% 0.15 74 / 0.14);
+      --band-fill: oklch(64% 0.15 74 / 0.12);
+      --band-edge: oklch(64% 0.15 74 / 0.3);
+      --mesh-opacity: 0.16;
+
+      --in: var(--ink);
+      --low: #7b57c8;
+      --low-soft: oklch(55% 0.17 295 / 0.13);
+      --high: #c9690c;
+      --high-soft: oklch(62% 0.15 55 / 0.14);
+      --very-high: #bb061e;
+
+      --accent: var(--honey);
+      --accent-strong: var(--honey-strong);
+      --accent-ink: var(--honey-ink);
+      --accent-soft: var(--honey-soft);
+      --focus: oklch(64% 0.15 74 / 0.55);
+
+      --danger-text: oklch(52% 0.14 35);
+
+      --seg-active: var(--card);
+  --popover: oklch(99% 0.01 92);
+      --popover-line: oklch(86% 0.024 86);
+      --shadow-pop: 0 1px 2px oklch(30% 0.04 70 / 0.08), 0 12px 32px -6px oklch(30% 0.04 70 / 0.22), 0 0 0 1px oklch(30% 0.04 70 / 0.08);
+      --shadow-modal: 0 2px 6px oklch(30% 0.04 70 / 0.08), 0 32px 80px -12px oklch(30% 0.04 70 / 0.3), 0 0 0 1px oklch(30% 0.04 70 / 0.08);
+      --shadow-card: 0 1px 2px oklch(30% 0.04 70 / 0.05), 0 0 0 1px oklch(30% 0.04 70 / 0.07);
+      --scrim: oklch(30% 0.04 70 / 0.3);
+    }
+  }
+
+  :root[data-theme='light'],
+  .sheet {
     color-scheme: light;
     --paper: oklch(94.5% 0.022 88);
     --paper-2: oklch(92% 0.024 87);
@@ -103,61 +316,14 @@
 
     --danger-text: oklch(52% 0.14 35);
 
-    --popover: oklch(99% 0.01 92);
+    --seg-active: var(--card);
+  --popover: oklch(99% 0.01 92);
     --popover-line: oklch(86% 0.024 86);
     --shadow-pop: 0 1px 2px oklch(30% 0.04 70 / 0.08), 0 12px 32px -6px oklch(30% 0.04 70 / 0.22), 0 0 0 1px oklch(30% 0.04 70 / 0.08);
     --shadow-modal: 0 2px 6px oklch(30% 0.04 70 / 0.08), 0 32px 80px -12px oklch(30% 0.04 70 / 0.3), 0 0 0 1px oklch(30% 0.04 70 / 0.08);
     --shadow-card: 0 1px 2px oklch(30% 0.04 70 / 0.05), 0 0 0 1px oklch(30% 0.04 70 / 0.07);
     --scrim: oklch(30% 0.04 70 / 0.3);
   }
-}
-
-:root[data-theme='light'],
-.sheet {
-  color-scheme: light;
-  --paper: oklch(94.5% 0.022 88);
-  --paper-2: oklch(92% 0.024 87);
-  --card: oklch(98.5% 0.012 92);
-  --card-2: oklch(91.5% 0.026 86);
-  --card-3: oklch(88% 0.028 85);
-  --line: oklch(87% 0.024 86);
-  --line-strong: oklch(78% 0.026 84);
-  --frame: oklch(0% 0 0 / 0.14);
-
-  --ink: oklch(27% 0.035 60);
-  --ink-2: oklch(47% 0.035 65);
-  --ink-3: oklch(60% 0.03 70);
-  --ink-4: oklch(78% 0.024 80);
-
-  --honey: oklch(64% 0.15 74);
-  --honey-strong: oklch(58% 0.15 72);
-  --honey-ink: oklch(20% 0.04 60);
-  --honey-soft: oklch(64% 0.15 74 / 0.14);
-  --band-fill: oklch(64% 0.15 74 / 0.12);
-  --band-edge: oklch(64% 0.15 74 / 0.3);
-  --mesh-opacity: 0.16;
-
-  --in: var(--ink);
-  --low: #7b57c8;
-  --low-soft: oklch(55% 0.17 295 / 0.13);
-  --high: #c9690c;
-  --high-soft: oklch(62% 0.15 55 / 0.14);
-  --very-high: #bb061e;
-
-  --accent: var(--honey);
-  --accent-strong: var(--honey-strong);
-  --accent-ink: var(--honey-ink);
-  --accent-soft: var(--honey-soft);
-  --focus: oklch(64% 0.15 74 / 0.55);
-
-  --danger-text: oklch(52% 0.14 35);
-
-  --popover: oklch(99% 0.01 92);
-  --popover-line: oklch(86% 0.024 86);
-  --shadow-pop: 0 1px 2px oklch(30% 0.04 70 / 0.08), 0 12px 32px -6px oklch(30% 0.04 70 / 0.22), 0 0 0 1px oklch(30% 0.04 70 / 0.08);
-  --shadow-modal: 0 2px 6px oklch(30% 0.04 70 / 0.08), 0 32px 80px -12px oklch(30% 0.04 70 / 0.3), 0 0 0 1px oklch(30% 0.04 70 / 0.08);
-  --shadow-card: 0 1px 2px oklch(30% 0.04 70 / 0.05), 0 0 0 1px oklch(30% 0.04 70 / 0.07);
-  --scrim: oklch(30% 0.04 70 / 0.3);
 }
 
 *,
@@ -350,9 +516,9 @@ textarea.field {
 
 .seg button[aria-pressed='true'],
 .seg button[aria-selected='true'] {
-  background: var(--card-2);
+  background: var(--seg-active);
   color: var(--ink);
-  box-shadow: 0 1px 2px oklch(0% 0 0 / 0.2);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
 }
 
 .dot {

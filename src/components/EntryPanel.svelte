@@ -342,6 +342,28 @@
     font-size: 13px;
     color: var(--ink-2);
   }
+  @media (max-height: 780px) {
+    .entry {
+      gap: 14px;
+      padding: 16px 26px 20px;
+    }
+    .mirror,
+    input {
+      font-size: 68px;
+    }
+    .value {
+      min-height: 72px;
+    }
+    .unit {
+      padding-bottom: 10px;
+    }
+    .status {
+      margin-top: 6px;
+    }
+    .last {
+      display: none;
+    }
+  }
   :global(.app.mobile) .entry {
     padding: 14px 16px 18px;
     gap: 14px;

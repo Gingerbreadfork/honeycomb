@@ -1,5 +1,8 @@
 import { defineConfig, type Plugin } from 'vitest/config';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { readFileSync } from 'node:fs';
+
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -39,6 +42,7 @@ function evalBridge(): Plugin {
 
 export default defineConfig({
   plugins: [svelte(), evalBridge()],
+  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   clearScreen: false,
   server: {
     port: 1430,
