@@ -25,7 +25,8 @@
     "window-state:default",
     "fs:allow-read-text-file",
     "fs:allow-write-text-file",
-    "opener:allow-open-url"
+    "opener:allow-open-url",
+    "opener:allow-default-urls"
   ],
   "platforms": [
     "linux",

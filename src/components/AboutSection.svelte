@@ -1,8 +1,13 @@
 <script lang="ts">
   import { openLink } from '../lib/platform';
+  import { app } from '../lib/store.svelte';
 
   const repo = 'https://github.com/Gingerbreadfork/honeycomb';
   const version = __APP_VERSION__;
+
+  function go(url: string): void {
+    openLink(url).catch((e) => app.toast(`Couldn't open the link: ${String(e)}`));
+  }
 </script>
 
 <section>
@@ -17,9 +22,9 @@
     </div>
   </div>
   <div class="links">
-    <button type="button" class="btn small" onclick={() => openLink(repo)}>Source on GitHub</button>
-    <button type="button" class="btn small" onclick={() => openLink(`${repo}/releases`)}>Releases</button>
-    <button type="button" class="btn small ghost" onclick={() => openLink(`${repo}/issues`)}>Report a problem</button>
+    <button type="button" class="btn small" onclick={() => go(repo)}>Source on GitHub</button>
+    <button type="button" class="btn small" onclick={() => go(`${repo}/releases`)}>Releases</button>
+    <button type="button" class="btn small ghost" onclick={() => go(`${repo}/issues`)}>Report a problem</button>
   </div>
   <p class="fine">
     Estimated A1c is calculated from your readings and is not a laboratory result. Talk to your care team about your targets.
@@ -31,6 +36,7 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+    padding: 16px 0;
   }
   .row {
     display: flex;

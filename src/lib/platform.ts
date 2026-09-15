@@ -100,8 +100,11 @@ export async function reveal(path: string): Promise<void> {
 }
 
 export async function openLink(url: string): Promise<void> {
-  if (isTauri) await openUrl(url);
-  else window.open(url, '_blank', 'noopener');
+  if (isTauri) {
+    await openUrl(url);
+    return;
+  }
+  window.open(url, '_blank', 'noopener');
 }
 
 export async function setBackgroundMode(on: boolean): Promise<void> {

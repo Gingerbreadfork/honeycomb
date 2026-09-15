@@ -91,6 +91,7 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
+    padding: 16px 0;
   }
   .head {
     display: flex;
