@@ -20,10 +20,28 @@
   });
   const unit = $derived(app.settings.unit);
   const skipped = $derived(job?.plan.skipped ?? 0);
+
+  let choosing = $state(false);
+  const showColumns = $derived(job !== null && job.headers.length > 0 && (choosing || job.plan.total === 0));
+
+  function pick(which: 'time' | 'glucose', e: Event): void {
+    choosing = true;
+    app.remapImport({ [which]: Number((e.currentTarget as HTMLSelectElement).value) });
+  }
+
+  function pickUnit(e: Event): void {
+    const v = (e.currentTarget as HTMLSelectElement).value;
+    app.remapImport({ unit: v === 'mmol/L' || v === 'mg/dL' ? v : undefined });
+  }
+
+  function close(): void {
+    choosing = false;
+    app.importing = null;
+  }
 </script>
 
 {#if job}
-  <Dialog title="Import readings" width={440} onclose={() => (app.importing = null)}>
+  <Dialog title="Import readings" width={440} onclose={close}>
     <p class="file">{job.name}</p>
     {#if job.plan.total === 0}
       <p class="text">
@@ -49,12 +67,44 @@
     {#if skipped && job.plan.total > 0}
       <p class="text skipped">{skipped} line{skipped === 1 ? '' : 's'} could not be read and will be left out.</p>
     {/if}
+    {#if showColumns}
+      <div class="columns">
+        <label>
+          <span>Time is in</span>
+          <select class="field" value={String(job.time)} onchange={(e) => pick('time', e)}>
+            {#if job.time < 0}<option value="-1" disabled>Choose a column</option>{/if}
+            {#each job.headers as h, i (i)}
+              <option value={String(i)}>{h || `Column ${i + 1}`}</option>
+            {/each}
+          </select>
+        </label>
+        <label>
+          <span>Glucose is in</span>
+          <select class="field" value={String(job.glucose)} onchange={(e) => pick('glucose', e)}>
+            {#if job.glucose < 0}<option value="-1" disabled>Choose a column</option>{/if}
+            {#each job.headers as h, i (i)}
+              <option value={String(i)}>{h || `Column ${i + 1}`}</option>
+            {/each}
+          </select>
+        </label>
+        <label>
+          <span>Values are in</span>
+          <select class="field" value={job.choice.unit ?? 'file'} onchange={pickUnit}>
+            <option value="file">Whatever the file says</option>
+            <option value="mmol/L">mmol/L</option>
+            <option value="mg/dL">mg/dL</option>
+          </select>
+        </label>
+      </div>
+    {:else if job.headers.length}
+      <button type="button" class="btn small ghost remap" onclick={() => (choosing = true)}>Not right? Choose the columns</button>
+    {/if}
     {#snippet footer()}
       {#if fresh.length}
-        <button type="button" class="btn" onclick={() => (app.importing = null)}>Cancel</button>
-        <button type="button" class="btn primary" data-autofocus onclick={() => app.confirmImport()}>Import {fresh.length} reading{fresh.length === 1 ? '' : 's'}</button>
+        <button type="button" class="btn" onclick={close}>Cancel</button>
+        <button type="button" class="btn primary" data-autofocus onclick={() => { choosing = false; app.confirmImport(); }}>Import {fresh.length} reading{fresh.length === 1 ? '' : 's'}</button>
       {:else}
-        <button type="button" class="btn primary" data-autofocus onclick={() => (app.importing = null)}>Done</button>
+        <button type="button" class="btn primary" data-autofocus onclick={close}>Done</button>
       {/if}
     {/snippet}
   </Dialog>
@@ -75,6 +125,28 @@
     color: var(--ink);
   }
   .skipped {
+    margin-top: 12px;
+  }
+  .columns {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+  }
+  .columns label {
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: var(--ink-2);
+  }
+  .columns select {
+    min-width: 0;
+  }
+  .remap {
     margin-top: 12px;
   }
   .sample {

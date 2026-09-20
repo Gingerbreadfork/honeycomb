@@ -140,7 +140,9 @@ was taken, and the app shows it by that clock: a reading logged at 8 am in Sydne
 when you open the file in London. The last three exist for sync and are harmless
 in a spreadsheet. The export from the Report page is the tidy five-column version without deleted
 rows. Files without the extra columns, including exports and reasonably named spreadsheets with a
-time and a glucose column, import cleanly, and importing the same file twice adds nothing.
+time and a glucose column, import cleanly, and importing the same file twice adds nothing. Meter
+exports that open with a title line or spread values over several glucose columns are read too,
+and when the headers are not recognised the import dialog lets you say which column is which.
 
 Before the first change on any day, the file as it stood is copied to
 `~/.local/share/honeycomb/backups/readings-<date>.csv`. The last 14 are kept. To go back to one,

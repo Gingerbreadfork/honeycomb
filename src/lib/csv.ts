@@ -113,55 +113,107 @@ export function readingsFromCsv(text: string, fallbackUnit: Unit): Reading[] {
   return parseReadings(text, fallbackUnit).readings;
 }
 
-/** `skipped` counts data lines that had no usable time or value. */
-export function parseReadings(text: string, fallbackUnit: Unit): { readings: Reading[]; skipped: number } {
-  const rows = parseCsv(text);
-  if (!rows.length) return { readings: [], skipped: 0 };
-  const headers = rows[0].map((h) => h.trim().toLowerCase());
-  let timeCol = findCol(headers, COLS.time);
-  const dateCol = exactCol(headers, COLS.date);
-  const glucoseCol = findCol(headers, COLS.glucose);
+/** Columns picked by hand in the import dialog, overriding what the headers suggest. */
+export interface ColumnChoice {
+  time?: number;
+  glucose?: number;
+  unit?: Unit;
+}
+
+export interface ParsedFile {
+  readings: Reading[];
+  /** Data lines that had no usable time or value. */
+  skipped: number;
+  /** Header cells as written, and the time and glucose columns used; -1 when none was found. */
+  headers: string[];
+  time: number;
+  glucose: number;
+}
+
+interface Layout {
+  time: number;
+  clock: number;
+  glucose: number[];
+}
+
+function layoutOf(headers: string[]): Layout | null {
+  let time = findCol(headers, COLS.time);
+  const date = exactCol(headers, COLS.date);
+  let clock = -1;
+  if (time < 0 && date >= 0) {
+    time = date;
+    clock = headers.findIndex((h, i) => i !== date && h === 'time');
+  } else if (time >= 0 && date >= 0 && headers[time] === 'time') {
+    clock = time;
+    time = date;
+  }
+  const first = findCol(headers, COLS.glucose);
+  if (time < 0 || first < 0) return null;
+  // Meter exports split values across columns such as "Scan Glucose" and "Strip Glucose".
+  const others = headers.map((h, i) => (i !== first && h.includes('glucose') ? i : -1)).filter((i) => i >= 0);
+  return { time, clock, glucose: [first, ...others] };
+}
+
+const HEADER_SEARCH = 12;
+
+/** Meter exports often start with a title line, so the header is the first early row that names a time and a glucose column. */
+function findHeaderRow(rows: string[][]): number {
+  const early = rows.slice(0, HEADER_SEARCH);
+  const named = early.findIndex((r) => layoutOf(r.map((h) => h.trim().toLowerCase())) !== null);
+  if (named >= 0) return named;
+  const widest = Math.max(...early.map((r) => r.length));
+  return early.findIndex((r) => r.length === widest);
+}
+
+export function parseReadings(text: string, fallbackUnit: Unit, choice: ColumnChoice = {}): ParsedFile {
+  const all = parseCsv(text);
+  if (!all.length) return { readings: [], skipped: 0, headers: [], time: -1, glucose: -1 };
+  const headerRow = findHeaderRow(all);
+  const shown = all[headerRow].map((h) => h.trim());
+  const headers = shown.map((h) => h.toLowerCase());
+  const rows = all.slice(headerRow + 1);
+  const guessed = layoutOf(headers);
+  const timeCol = choice.time ?? guessed?.time ?? -1;
+  const clockCol = choice.time === undefined || choice.time === guessed?.time ? (guessed?.clock ?? -1) : -1;
+  const glucoseCols = choice.glucose !== undefined ? [choice.glucose] : (guessed?.glucose ?? []);
+  const found = { headers: shown, time: timeCol, glucose: glucoseCols[0] ?? -1 };
+  if (timeCol < 0 || !glucoseCols.length) return { readings: [], skipped: rows.length, ...found };
+
   const unitCol = findCol(headers, COLS.unit);
   const contextCol = findCol(headers, COLS.context);
   const noteCol = findCol(headers, COLS.note);
   const idCol = exactCol(headers, COLS.id);
   const updatedCol = exactCol(headers, COLS.updated);
   const deletedCol = exactCol(headers, COLS.deleted);
-  let clockCol = -1;
-  if (timeCol < 0 && dateCol >= 0) {
-    timeCol = dateCol;
-    clockCol = headers.findIndex((h, i) => i !== dateCol && h === 'time');
-  } else if (timeCol >= 0 && dateCol >= 0 && headers[timeCol] === 'time') {
-    clockCol = timeCol;
-    timeCol = dateCol;
-  }
-  if (timeCol < 0 || glucoseCol < 0) return { readings: [], skipped: rows.length - 1 };
-  const headerUnit = unitFrom(headers[glucoseCol]);
-  const dayOrder = detectDayOrder(rows.slice(1).map((r) => r[timeCol] ?? '')) ?? localeDayOrder();
+  const dayOrder = detectDayOrder(rows.map((r) => r[timeCol] ?? '')) ?? localeDayOrder();
 
   const out: Reading[] = [];
-  for (const r of rows.slice(1)) {
+  for (const r of rows) {
     const timeText = clockCol >= 0 ? `${r[timeCol] ?? ''} ${r[clockCol] ?? ''}` : (r[timeCol] ?? '');
     const stamp = parseStamp(timeText, dayOrder);
-    const time = stamp?.time ?? null;
-    const offset = stamp?.offset ?? null;
-    const value = Number((r[glucoseCol] ?? '').trim().replace(',', '.'));
-    if (!time || !Number.isFinite(value) || value <= 0) continue;
+    const glucoseCol = glucoseCols.find((c) => (r[c] ?? '').trim() !== '') ?? glucoseCols[0];
+    const valueText = (r[glucoseCol] ?? '').trim();
+    const value = Number(valueText.replace(',', '.'));
+    if (!stamp || !Number.isFinite(value) || value <= 0) continue;
+    const { time, offset } = stamp;
     const unit: Unit =
-      (unitCol >= 0 ? unitFrom(r[unitCol] ?? '') : null) ?? headerUnit ?? (value > 35 ? 'mg/dL' : fallbackUnit);
+      choice.unit ??
+      (unitCol >= 0 ? unitFrom(r[unitCol] ?? '') : null) ??
+      unitFrom(headers[glucoseCol]) ??
+      (value > 35 ? 'mg/dL' : fallbackUnit);
     const mmol = unit === 'mmol/L' ? value : value / 18.0182;
     const context = normalizeContext(contextCol >= 0 ? (r[contextCol] ?? '') : '');
     const note = noteCol >= 0 ? (r[noteCol] ?? '').trim() : '';
-    const id = (idCol >= 0 ? (r[idCol] ?? '').trim() : '') || legacyId(new Date(instantMs(time, offset)), (r[glucoseCol] ?? '').trim(), unit, context, note);
-    const updatedText = updatedCol >= 0 ? (r[updatedCol] ?? '').trim() : '';
     const taken = instantMs(time, offset);
+    const id = (idCol >= 0 ? (r[idCol] ?? '').trim() : '') || legacyId(new Date(taken), valueText, unit, context, note);
+    const updatedText = updatedCol >= 0 ? (r[updatedCol] ?? '').trim() : '';
     const updated = updatedText ? (parseTime(updatedText)?.getTime() ?? taken) : taken;
     const deletedText = deletedCol >= 0 ? (r[deletedCol] ?? '').trim() : '';
     const deleted = deletedText ? (parseTime(deletedText)?.getTime() ?? null) : null;
     out.push({ id, time, offset, mmol, unit, context, note, updated, deleted });
   }
   out.sort((a, b) => a.time.getTime() - b.time.getTime());
-  return { readings: out, skipped: rows.length - 1 - out.length };
+  return { readings: out, skipped: rows.length - out.length, ...found };
 }
 
 function valueText(r: Reading): string {

@@ -1,4 +1,4 @@
-import { parseReadings, readingsToCsv, newId } from './csv';
+import { parseReadings, readingsToCsv, newId, type ColumnChoice } from './csv';
 import { DEFAULT_TARGETS, type Context, type Reading, type Targets, type Unit } from './glucose';
 import { appPaths, backupFile, fileMtime, quitApp, readText, setBackgroundMode, writeText, win, isTauri, type AppPaths } from './platform';
 import { SyncState } from './sync.svelte';
@@ -77,7 +77,15 @@ class Store {
   toasts = $state<Toast[]>([]);
   settingsOpen = $state(false);
   editing = $state<Reading | null>(null);
-  importing = $state<{ name: string; plan: ImportPlan } | null>(null);
+  importing = $state<{
+    name: string;
+    text: string;
+    headers: string[];
+    choice: ColumnChoice;
+    time: number;
+    glucose: number;
+    plan: ImportPlan;
+  } | null>(null);
   maximized = $state(false);
   now = $state(new Date());
   lastSaved = $state<Reading | null>(null);
@@ -285,9 +293,16 @@ class Store {
     this.previewImport(picked.name, picked.text);
   }
 
-  previewImport(name: string, text: string): void {
-    const { readings, skipped } = parseReadings(text, this.settings.unit);
-    this.importing = { name, plan: planImport(this.rows, readings, skipped) };
+  previewImport(name: string, text: string, choice: ColumnChoice = {}): void {
+    const file = parseReadings(text, this.settings.unit, choice);
+    const plan = planImport(this.rows, file.readings, file.skipped);
+    this.importing = { name, text, choice, headers: file.headers, time: file.time, glucose: file.glucose, plan };
+  }
+
+  /** Reads the file being imported again with columns picked by hand. */
+  remapImport(choice: ColumnChoice): void {
+    const job = this.importing;
+    if (job) this.previewImport(job.name, job.text, { ...job.choice, ...choice });
   }
 
   confirmImport(): void {
