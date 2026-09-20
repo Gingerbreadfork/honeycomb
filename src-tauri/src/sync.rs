@@ -8,7 +8,7 @@ use std::{
 use iroh::{
     address_lookup::UserData,
     endpoint::{presets, Connection, ConnectionError, VarInt},
-    Endpoint, EndpointAddr, EndpointId, SecretKey, TransportAddr,
+    Endpoint, EndpointAddr, EndpointId, RelayMode, SecretKey, TransportAddr,
 };
 #[cfg(not(target_os = "android"))]
 use iroh_mdns_address_lookup::{DiscoveryEvent, MdnsAddressLookup};
@@ -172,8 +172,44 @@ struct Inner {
     ready: bool,
 }
 
+/// Where the engine sends its events. The app passes them to the page; tests record them.
+pub trait Ui: Send + Sync + 'static {
+    fn emit(&self, event: &str, payload: serde_json::Value);
+    fn show_window(&self) {}
+}
+
+impl Ui for AppHandle {
+    fn emit(&self, event: &str, payload: serde_json::Value) {
+        let _ = Emitter::emit(self, event, payload);
+    }
+
+    fn show_window(&self) {
+        if let Some(w) = self.get_webview_window("main") {
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
+    }
+}
+
+/// How the endpoint reaches other devices. Tests turn everything off and connect over loopback.
+#[derive(Clone, Copy)]
+pub struct Network {
+    pub relays: bool,
+    #[cfg_attr(target_os = "android", allow(dead_code))]
+    pub mdns: bool,
+    pub loopback: bool,
+    pub online_wait: Duration,
+}
+
+impl Default for Network {
+    fn default() -> Self {
+        Network { relays: true, mdns: true, loopback: false, online_wait: Duration::from_secs(15) }
+    }
+}
+
 pub struct SyncEngine {
-    app: AppHandle,
+    ui: Arc<dyn Ui>,
+    net: Network,
     endpoint: Endpoint,
     dir: PathBuf,
     inner: Arc<Mutex<Inner>>,
@@ -320,7 +356,7 @@ impl SyncEngine {
         let mut addr = self.endpoint.addr();
         addr.addrs.retain(|a| match a {
             TransportAddr::Relay(_) => true,
-            TransportAddr::Ip(ip) => !ip.ip().is_loopback() && ip.is_ipv4(),
+            TransportAddr::Ip(ip) => (self.net.loopback || !ip.ip().is_loopback()) && ip.is_ipv4(),
             _ => false,
         });
         addr
@@ -333,7 +369,7 @@ impl SyncEngine {
         })
     }
 
-    pub async fn start(app: AppHandle, dir: PathBuf) -> Result<Shared, String> {
+    pub async fn start(ui: Arc<dyn Ui>, dir: PathBuf, net: Network) -> Result<Shared, String> {
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let key_path = dir.join("device.key");
         let secret = match std::fs::read_to_string(&key_path) {
@@ -365,7 +401,8 @@ impl SyncEngine {
             .unwrap_or_else(|| clean_device_name(&default_device_name()));
 
         let user_data = advert(&device_name)?;
-        let endpoint = Endpoint::builder(presets::N0)
+        let builder = if net.relays { Endpoint::builder(presets::N0) } else { Endpoint::builder(presets::Minimal).relay_mode(RelayMode::Disabled) };
+        let endpoint = builder
             .secret_key(secret)
             .alpns(vec![ALPN_SYNC.to_vec(), ALPN_PAIR.to_vec()])
             .user_data_for_address_lookup(user_data)
@@ -374,7 +411,8 @@ impl SyncEngine {
             .map_err(|e| e.to_string())?;
 
         let engine = Arc::new(SyncEngine {
-            app,
+            ui,
+            net,
             endpoint: endpoint.clone(),
             dir,
             inner: Arc::new(Mutex::new(Inner {
@@ -394,7 +432,7 @@ impl SyncEngine {
         });
 
         #[cfg(not(target_os = "android"))]
-        if let Ok(mdns) = MdnsAddressLookup::builder().service_name("honeycomb").build(endpoint.id()) {
+        if let Some(mdns) = net.mdns.then(|| MdnsAddressLookup::builder().service_name("honeycomb").build(endpoint.id()).ok()).flatten() {
             if let Ok(services) = endpoint.address_lookup() {
                 services.add(mdns.clone());
                 let e = engine.clone();
@@ -447,7 +485,7 @@ impl SyncEngine {
         {
             let e = engine.clone();
             tauri::async_runtime::spawn(async move {
-                let _ = tokio::time::timeout(Duration::from_secs(15), e.endpoint.online()).await;
+                let _ = tokio::time::timeout(e.net.online_wait, e.endpoint.online()).await;
                 e.inner.lock().unwrap().ready = true;
                 e.emit_state();
                 e.wake.notify_one();
@@ -499,13 +537,19 @@ impl SyncEngine {
         }
     }
 
+    fn emit<T: Serialize>(&self, event: &str, payload: T) {
+        if let Ok(value) = serde_json::to_value(payload) {
+            self.ui.emit(event, value);
+        }
+    }
+
     fn emit_state(&self) {
-        let _ = self.app.emit("sync:state", self.snapshot());
+        self.emit("sync:state", self.snapshot());
     }
 
     fn emit_rows(&self) {
         let rows: Vec<Row> = self.inner.lock().unwrap().rows.values().cloned().collect();
-        let _ = self.app.emit("sync:rows", rows);
+        self.emit("sync:rows", rows);
     }
 
     pub fn set_rows(&self, rows: Vec<Row>) {
@@ -545,7 +589,7 @@ impl SyncEngine {
     }
 
     pub async fn start_pairing(&self) -> Result<PairingState, String> {
-        let _ = tokio::time::timeout(Duration::from_secs(8), self.endpoint.online()).await;
+        let _ = tokio::time::timeout(self.net.online_wait.min(Duration::from_secs(8)), self.endpoint.online()).await;
         let secret = random_bytes::<4>()?;
         let code = encode_code(&PairCode { id: *self.endpoint.id().as_bytes(), secret, relay: self.my_relay().map(|u| compact_relay(&u)) });
         let expires = now_ms() + PAIRING_TTL.as_millis() as u64;
@@ -619,7 +663,7 @@ impl SyncEngine {
             .map_err(|_| "Couldn't reach that device".to_string())?
             .map_err(|_| "Couldn't reach that device".to_string())?;
         let addr_id = addr.id;
-        let _ = self.app.emit("sync:pair-waiting", confirm_code(&addr_id, &self.endpoint.id()));
+        self.emit("sync:pair-waiting", confirm_code(&addr_id, &self.endpoint.id()));
         let msg = Message::Pair { device, addr: self.my_addr(), secret: None };
         let response = tokio::time::timeout(Duration::from_secs(90), request(&conn, &msg, MAX_PAIR_MESSAGE))
             .await
@@ -656,7 +700,7 @@ impl SyncEngine {
             g.pending.insert(request_id, tx);
             (rx, request_id)
         };
-        let _ = self.app.emit(event, PairRequest { request_id, device: device.clone(), code });
+        self.emit(event, PairRequest { request_id, device: device.clone(), code });
         let answer = tokio::time::timeout(Duration::from_secs(80), rx).await;
         self.inner.lock().unwrap().pending.remove(&request_id);
         answer.ok().and_then(|r| r.ok()).unwrap_or(false)
@@ -727,17 +771,14 @@ impl SyncEngine {
                         g.pending.insert(request_id, tx);
                         (rx, PairRequest { request_id, device: device.clone(), code: confirm_code(&remote, &self.endpoint.id()) })
                     };
-                    let _ = self.app.emit("sync:pair-request", req.clone());
-                    if let Some(w) = self.app.get_webview_window("main") {
-                        let _ = w.show();
-                        let _ = w.set_focus();
-                    }
+                    self.emit("sync:pair-request", req.clone());
+                    self.ui.show_window();
                     let accepted = tokio::select! {
                         answer = tokio::time::timeout(Duration::from_secs(80), rx) => answer.ok().and_then(|r| r.ok()).unwrap_or(false),
                         _ = conn.closed() => false,
                     };
                     self.inner.lock().unwrap().pending.remove(&req.request_id);
-                    let _ = self.app.emit("sync:pair-request-ended", req.request_id);
+                    self.emit("sync:pair-request-ended", req.request_id);
                     accepted
                 }
             };
@@ -751,7 +792,7 @@ impl SyncEngine {
             self.add_peer(&device, addr);
             self.inner.lock().unwrap().pairing = None;
             self.save();
-            let _ = self.app.emit("sync:paired", device);
+            self.emit("sync:paired", device);
             self.emit_state();
             wait_closed(&conn).await;
             self.wake.notify_one();
@@ -779,7 +820,7 @@ impl SyncEngine {
         self.save();
         if changed > 0 {
             self.emit_rows();
-            let _ = self.app.emit("sync:pulled", serde_json::json!({ "from": device.name, "changed": changed }));
+            self.emit("sync:pulled", serde_json::json!({ "from": device.name, "changed": changed }));
         }
         self.emit_state();
         Ok(())
@@ -858,7 +899,7 @@ impl SyncEngine {
                 self.save();
                 if changed > 0 {
                     self.emit_rows();
-                    let _ = self.app.emit("sync:pulled", serde_json::json!({ "from": device.name, "changed": changed }));
+                    self.emit("sync:pulled", serde_json::json!({ "from": device.name, "changed": changed }));
                 }
                 Ok(())
             }
@@ -871,6 +912,137 @@ impl SyncEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Records what the engine would have shown, and answers pairing prompts the way a user would.
+    struct FakeUi {
+        events: Mutex<Vec<(String, serde_json::Value)>>,
+        engine: Mutex<Option<Shared>>,
+        accept: bool,
+    }
+
+    impl FakeUi {
+        fn saw(&self, event: &str) -> usize {
+            self.events.lock().unwrap().iter().filter(|(name, _)| name == event).count()
+        }
+    }
+
+    impl Ui for FakeUi {
+        fn emit(&self, event: &str, payload: serde_json::Value) {
+            if event == "sync:pair-request" || event == "sync:pair-confirm" {
+                let id = payload["request_id"].as_u64().unwrap();
+                if let Some(engine) = self.engine.lock().unwrap().as_ref() {
+                    engine.respond_pair(id, self.accept);
+                }
+            }
+            self.events.lock().unwrap().push((event.to_string(), payload));
+        }
+    }
+
+    struct Device {
+        engine: Shared,
+        ui: Arc<FakeUi>,
+        dir: PathBuf,
+    }
+
+    impl Drop for Device {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    /// An engine with no relays or discovery, reachable on loopback only.
+    async fn device(name: &str, accept: bool) -> Device {
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("honeycomb-sync-test-{}-{n}-{name}", std::process::id()));
+        let ui = Arc::new(FakeUi { events: Mutex::new(Vec::new()), engine: Mutex::new(None), accept });
+        let net = Network { relays: false, mdns: false, loopback: true, online_wait: Duration::ZERO };
+        let engine = SyncEngine::start(ui.clone(), dir.clone(), net).await.unwrap();
+        engine.set_device_name(name.to_string());
+        *ui.engine.lock().unwrap() = Some(engine.clone());
+        for _ in 0..100 {
+            if !engine.my_addr().addrs.is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(!engine.my_addr().addrs.is_empty(), "{name} never got an address");
+        Device { engine, ui, dir }
+    }
+
+    /// The answering side finishes its work after the caller has already moved on.
+    async fn eventually(what: &str, check: impl Fn() -> bool) {
+        for _ in 0..200 {
+            if check() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("never happened: {what}");
+    }
+
+    fn pair(a: &Device, b: &Device) {
+        a.engine.add_peer(&b.engine.device(), b.engine.my_addr());
+        b.engine.add_peer(&a.engine.device(), a.engine.my_addr());
+    }
+
+    fn ids(d: &Device) -> Vec<String> {
+        d.engine.inner.lock().unwrap().rows.keys().cloned().collect()
+    }
+
+    #[test]
+    fn paired_devices_end_up_with_the_same_rows() {
+        tauri::async_runtime::block_on(async {
+            let a = device("a", true).await;
+            let b = device("b", true).await;
+            pair(&a, &b);
+            a.engine.set_rows(vec![row("from-a", 10, None)]);
+            b.engine.set_rows(vec![row("from-b", 20, None), row("gone", 30, Some(30))]);
+            a.engine.sync_all().await;
+            assert_eq!(ids(&a), ["from-a", "from-b", "gone"]);
+            assert_eq!(ids(&a), ids(&b));
+            assert_eq!(a.ui.saw("sync:rows"), 1);
+            eventually("b shows the rows it received", || b.ui.saw("sync:rows") == 1).await;
+            let peer = &a.engine.snapshot().peers[0];
+            assert!(peer.online && peer.last_sync.is_some() && !peer.unpaired);
+        });
+    }
+
+    #[test]
+    fn a_device_that_was_removed_is_turned_away_and_told_so() {
+        tauri::async_runtime::block_on(async {
+            let a = device("a", true).await;
+            let b = device("b", true).await;
+            a.engine.add_peer(&b.engine.device(), b.engine.my_addr());
+            a.engine.set_rows(vec![row("private", 10, None)]);
+            a.engine.sync_all().await;
+            assert!(ids(&b).is_empty());
+            let peer = &a.engine.snapshot().peers[0];
+            assert!(peer.unpaired && !peer.online);
+        });
+    }
+
+    #[test]
+    fn nearby_pairing_needs_a_yes_on_both_devices() {
+        tauri::async_runtime::block_on(async {
+            let b = device("b", true).await;
+            let b_id = b.engine.device().id;
+
+            let wary = device("wary", false).await;
+            wary.engine.inner.lock().unwrap().nearby.insert(b_id.clone(), ("b".into(), b.engine.my_addr()));
+            assert!(wary.engine.pair_nearby(&b_id).await.is_err());
+            assert!(wary.engine.snapshot().peers.is_empty());
+
+            let a = device("a", true).await;
+            a.engine.inner.lock().unwrap().nearby.insert(b_id.clone(), ("b".into(), b.engine.my_addr()));
+            let paired = a.engine.pair_nearby(&b_id).await.unwrap();
+            assert_eq!(paired.name, "b");
+            assert_eq!(a.engine.snapshot().peers.len(), 1);
+            assert!(b.engine.snapshot().peers.iter().any(|p| p.id == a.engine.device().id));
+            assert_eq!(a.ui.saw("sync:pair-confirm"), 1);
+            assert!(b.ui.saw("sync:pair-request") >= 1);
+        });
+    }
 
     fn row(id: &str, updated: u64, deleted: Option<u64>) -> Row {
         Row { id: id.into(), time: "2026-09-15T08:00:00+10:00".into(), mmol: 6.4, unit: "mmol/L".into(), context: String::new(), note: String::new(), updated, deleted }

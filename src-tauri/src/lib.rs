@@ -178,7 +178,7 @@ async fn sync_start(app: tauri::AppHandle, state: State<'_, SyncHandle>) -> Resu
         return Ok(e.snapshot());
     }
     let dir = app.path().data_dir().map(|d| d.join(profile_dir_name())).unwrap_or_else(|_| PathBuf::from("."));
-    let engine = SyncEngine::start(app.clone(), dir).await?;
+    let engine = SyncEngine::start(std::sync::Arc::new(app.clone()), dir, sync::Network::default()).await?;
     state.engine.lock().unwrap().replace(engine.clone());
     Ok(engine.snapshot())
 }
