@@ -21,6 +21,8 @@ use tokio::sync::{oneshot, Notify};
 const ALPN_SYNC: &[u8] = b"honeycomb/sync/1";
 const ALPN_PAIR: &[u8] = b"honeycomb/pair/1";
 const MAX_MESSAGE: usize = 64 * 1024 * 1024;
+const MAX_PAIR_MESSAGE: usize = 64 * 1024;
+const IO_TIMEOUT: Duration = Duration::from_secs(60);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(12);
 const PAIRING_TTL: Duration = Duration::from_secs(10 * 60);
 const SYNC_INTERVAL: Duration = Duration::from_secs(120);
@@ -187,18 +189,10 @@ fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
 
-fn random_bytes<const N: usize>() -> [u8; N] {
+fn random_bytes<const N: usize>() -> Result<[u8; N], String> {
     let mut out = [0u8; N];
-    use std::io::Read;
-    if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
-        let _ = f.read_exact(&mut out);
-    } else {
-        let t = now_ms().to_le_bytes();
-        for (i, b) in out.iter_mut().enumerate() {
-            *b = t[i % 8] ^ (i as u8).wrapping_mul(31);
-        }
-    }
-    out
+    getrandom::fill(&mut out).map_err(|_| "No source of randomness is available".to_string())?;
+    Ok(out)
 }
 
 /// Trimmed and cut to a length that always fits the address lookup record.
@@ -279,13 +273,17 @@ fn merge_rows(local: &mut BTreeMap<String, Row>, incoming: Vec<Row>) -> usize {
     changed
 }
 
-async fn request(conn: &Connection, msg: &Message) -> Result<Message, String> {
+async fn request(conn: &Connection, msg: &Message, limit: usize) -> Result<Message, String> {
     let (mut send, mut recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
     let bytes = serde_json::to_vec(msg).map_err(|e| e.to_string())?;
     send.write_all(&(bytes.len() as u32).to_be_bytes()).await.map_err(|e| e.to_string())?;
     send.write_all(&bytes).await.map_err(|e| e.to_string())?;
     send.finish().map_err(|e| e.to_string())?;
-    read_message(&mut recv).await
+    read_message(&mut recv, limit).await
+}
+
+async fn within<T>(limit: Duration, work: impl std::future::Future<Output = Result<T, String>>) -> Result<T, String> {
+    tokio::time::timeout(limit, work).await.map_err(|_| "The other device stopped answering".to_string())?
 }
 
 /// Lets the requester read the reply and close first; dropping the connection early loses the reply.
@@ -293,11 +291,11 @@ async fn wait_closed(conn: &Connection) {
     let _ = tokio::time::timeout(Duration::from_secs(15), conn.closed()).await;
 }
 
-async fn read_message(recv: &mut iroh::endpoint::RecvStream) -> Result<Message, String> {
+async fn read_message(recv: &mut iroh::endpoint::RecvStream, limit: usize) -> Result<Message, String> {
     let mut len = [0u8; 4];
     recv.read_exact(&mut len).await.map_err(|e| e.to_string())?;
     let len = u32::from_be_bytes(len) as usize;
-    if len > MAX_MESSAGE {
+    if len > limit {
         return Err("message too large".into());
     }
     let mut buf = vec![0u8; len];
@@ -541,7 +539,7 @@ impl SyncEngine {
 
     pub async fn start_pairing(&self) -> Result<PairingState, String> {
         let _ = tokio::time::timeout(Duration::from_secs(8), self.endpoint.online()).await;
-        let secret = random_bytes::<4>();
+        let secret = random_bytes::<4>()?;
         let code = encode_code(&PairCode { id: *self.endpoint.id().as_bytes(), secret, relay: self.my_relay().map(|u| compact_relay(&u)) });
         let expires = now_ms() + PAIRING_TTL.as_millis() as u64;
         self.inner.lock().unwrap().pairing = Some(Pairing { secret, code: code.clone(), expires });
@@ -578,7 +576,7 @@ impl SyncEngine {
             .await
             .map_err(|_| "Couldn't reach the other device. Check it is open and online.".to_string())?
             .map_err(|_| "Couldn't reach the other device. Check it is open and online.".to_string())?;
-        let response = request(&conn, &msg).await?;
+        let response = within(IO_TIMEOUT, request(&conn, &msg, MAX_PAIR_MESSAGE)).await?;
         conn.close(0u32.into(), b"done");
         match response {
             Message::PairOk { device, addr } => {
@@ -610,7 +608,7 @@ impl SyncEngine {
             .map_err(|_| "Couldn't reach that device".to_string())?;
         let _ = self.app.emit("sync:pair-waiting", confirm_code(&addr.id, &self.endpoint.id()));
         let msg = Message::Pair { device, addr: self.my_addr(), secret: None };
-        let response = tokio::time::timeout(Duration::from_secs(90), request(&conn, &msg))
+        let response = tokio::time::timeout(Duration::from_secs(90), request(&conn, &msg, MAX_PAIR_MESSAGE))
             .await
             .map_err(|_| "The other device didn't answer in time".to_string())??;
         conn.close(0u32.into(), b"done");
@@ -660,9 +658,15 @@ impl SyncEngine {
 
     async fn handle_connection(&self, conn: Connection, alpn: &[u8]) -> Result<(), String> {
         let remote = conn.remote_id();
-        let (mut send, mut recv) = conn.accept_bi().await.map_err(|e| e.to_string())?;
-        let msg = read_message(&mut recv).await?;
-        if alpn == ALPN_PAIR {
+        let pairing = alpn == ALPN_PAIR;
+        if !pairing && !self.inner.lock().unwrap().peers.iter().any(|p| p.id == remote.to_string()) {
+            conn.close(1u32.into(), b"not paired");
+            return Ok(());
+        }
+        let limit = if pairing { MAX_PAIR_MESSAGE } else { MAX_MESSAGE };
+        let (mut send, mut recv) = within(IO_TIMEOUT, async { conn.accept_bi().await.map_err(|e| e.to_string()) }).await?;
+        let msg = within(IO_TIMEOUT, read_message(&mut recv, limit)).await?;
+        if pairing {
             let Message::Pair { device, addr: their_addr, secret } = msg else {
                 return Err("expected pair".into());
             };
@@ -715,12 +719,6 @@ impl SyncEngine {
         let Message::Sync { device, addr: their_addr, rows } = msg else {
             return Err("expected sync".into());
         };
-        let known = self.inner.lock().unwrap().peers.iter().any(|p| p.id == remote.to_string());
-        if !known {
-            let _ = reply(&mut send, &Message::PairRejected { reason: "Not paired".into() }).await;
-            wait_closed(&conn).await;
-            return Ok(());
-        }
         let (changed, merged) = {
             let mut g = self.inner.lock().unwrap();
             let changed = merge_rows(&mut g.rows, rows);
@@ -787,7 +785,7 @@ impl SyncEngine {
                 .map_err(|_| "timeout".to_string())?
                 .map_err(|e| e.to_string())?,
         };
-        let response = request(&conn, &Message::Sync { device: self.device(), addr: self.my_addr(), rows }).await?;
+        let response = within(IO_TIMEOUT, request(&conn, &Message::Sync { device: self.device(), addr: self.my_addr(), rows }, MAX_MESSAGE)).await?;
         conn.close(0u32.into(), b"done");
         match response {
             Message::SyncOk { device, addr, rows } => {
