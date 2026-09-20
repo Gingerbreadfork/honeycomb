@@ -18,6 +18,13 @@ function evalBridge(): Plugin {
         pending.delete(data.id);
       });
       server.middlewares.use('/__eval', (req, res) => {
+        // Command-line callers on this machine only. Browsers send Origin on every POST, so a web page can't reach this.
+        const local = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress ?? '');
+        if (!local || req.headers.origin || req.method !== 'POST') {
+          res.statusCode = 403;
+          res.end('forbidden');
+          return;
+        }
         let body = '';
         req.on('data', (c) => (body += c));
         req.on('end', () => {
