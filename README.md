@@ -135,7 +135,9 @@ time,glucose,unit,context,note,id,updated,deleted
 2026-09-15T08:42:00+10:00,6.4,mmol/L,fasting,,k3v9tq2xm8pd,2026-09-15T08:42:07.512+10:00,
 ```
 
-The first five columns are what you would expect. The last three exist for sync and are harmless
+The first five columns are what you would expect. Each time keeps the UTC offset of the place it
+was taken, and the app shows it by that clock: a reading logged at 8 am in Sydney still reads 8 am
+when you open the file in London. The last three exist for sync and are harmless
 in a spreadsheet. The export from the Report page is the tidy five-column version without deleted
 rows. Files without the extra columns, including exports and reasonably named spreadsheets with a
 time and a glucose column, import cleanly, and importing the same file twice adds nothing.

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { app } from '../lib/store.svelte';
   import { CONTEXTS, formatValue, inputHint, parseInput, STATUS_LABEL, statusOf, toneOf, type Context, type Reading } from '../lib/glucose';
-  import { dateInputValue, fromInputs, isFuture, timeInputValue } from '../lib/time';
+  import { dateInputValue, fromInputs, instantMs, isFuture, timeInputValue } from '../lib/time';
   import Dialog from './Dialog.svelte';
   import Icon from './Icon.svelte';
 
@@ -21,7 +21,7 @@
   const mmol = $derived(parseInput(text, unit));
   const hint = $derived(inputHint(text, unit));
   const when = $derived(fromInputs(date, time));
-  const future = $derived(when !== null && isFuture(when, app.now));
+  const future = $derived(when !== null && isFuture(new Date(instantMs(when, reading.offset)), app.now));
   const status = $derived(mmol === null ? null : statusOf(mmol, app.settings.targets));
   const valid = $derived(mmol !== null && when !== null && !future);
 

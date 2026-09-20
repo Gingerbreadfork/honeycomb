@@ -1,4 +1,5 @@
 import type { Reading } from './glucose';
+import { instantMs } from './time';
 
 export interface ImportPlan {
   total: number;
@@ -9,9 +10,10 @@ export interface ImportPlan {
 }
 
 const MINUTE = 60_000;
+const taken = (r: Reading) => instantMs(r.time, r.offset);
 
 function sameReading(a: Reading, b: Reading): boolean {
-  return Math.abs(a.time.getTime() - b.time.getTime()) < MINUTE && Math.abs(a.mmol - b.mmol) < 0.05;
+  return Math.abs(taken(a) - taken(b)) < MINUTE && Math.abs(a.mmol - b.mmol) < 0.05;
 }
 
 /** Live readings grouped by minute, so a match is looked up in the neighbouring minutes only. */
@@ -19,14 +21,14 @@ class MinuteIndex {
   private buckets = new Map<number, Reading[]>();
 
   add(r: Reading): void {
-    const key = Math.floor(r.time.getTime() / MINUTE);
+    const key = Math.floor(taken(r) / MINUTE);
     const bucket = this.buckets.get(key);
     if (bucket) bucket.push(r);
     else this.buckets.set(key, [r]);
   }
 
   has(r: Reading): boolean {
-    const key = Math.floor(r.time.getTime() / MINUTE);
+    const key = Math.floor(taken(r) / MINUTE);
     for (const k of [key - 1, key, key + 1]) {
       if (this.buckets.get(k)?.some((other) => sameReading(other, r))) return true;
     }

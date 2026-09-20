@@ -1,7 +1,8 @@
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
-export function toLocalIso(d: Date, withMs = false): string {
-  const off = -d.getTimezoneOffset();
+/** Written with `offset` (minutes east of UTC) when given, otherwise with this device's zone. */
+export function toLocalIso(d: Date, withMs = false, offset: number | null = null): string {
+  const off = offset ?? -d.getTimezoneOffset();
   const sign = off >= 0 ? '+' : '-';
   const a = Math.abs(off);
   return (
@@ -46,6 +47,29 @@ export function localeDayOrder(): DayOrder {
   } catch {
     return 'dmy';
   }
+}
+
+const WITH_OFFSET = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{1,2}):(\d{2})(?::(\d{2}))?(?:\.\d{1,3})?([+-])(\d{2}):?(\d{2})$/;
+
+/**
+ * Keeps the clock a reading was taken by: 08:00+10:00 reads as 8 am wherever it is viewed.
+ * `offset` is minutes east of UTC, or null when the text carried none.
+ */
+export function parseStamp(raw: string, order: DayOrder = 'dmy'): { time: Date; offset: number | null } | null {
+  const m = raw.trim().match(WITH_OFFSET);
+  if (m) {
+    const wall = localDate(+m[1], +m[2], +m[3], +m[4], +m[5], m[6] ? +m[6] : 0);
+    if (wall && wall.getHours() === +m[4]) return { time: wall, offset: (m[7] === '-' ? -1 : 1) * (+m[8] * 60 + +m[9]) };
+  }
+  const time = parseTime(raw, order);
+  return time ? { time, offset: null } : null;
+}
+
+/** The moment a reading was taken, whatever clock it is shown by. */
+export function instantMs(time: Date, offset: number | null | undefined): number {
+  if (offset === null || offset === undefined) return time.getTime();
+  const asUtc = Date.UTC(time.getFullYear(), time.getMonth(), time.getDate(), time.getHours(), time.getMinutes(), time.getSeconds(), time.getMilliseconds());
+  return asUtc - offset * 60_000;
 }
 
 export function parseTime(raw: string, order: DayOrder = 'dmy'): Date | null {

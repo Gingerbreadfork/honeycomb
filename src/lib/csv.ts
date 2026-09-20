@@ -1,5 +1,5 @@
 import { normalizeContext, type Reading, type Unit } from './glucose';
-import { detectDayOrder, localeDayOrder, parseTime, toLocalIso } from './time';
+import { detectDayOrder, instantMs, localeDayOrder, parseStamp, parseTime, toLocalIso } from './time';
 
 export function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
@@ -142,7 +142,9 @@ export function parseReadings(text: string, fallbackUnit: Unit): { readings: Rea
   const out: Reading[] = [];
   for (const r of rows.slice(1)) {
     const timeText = clockCol >= 0 ? `${r[timeCol] ?? ''} ${r[clockCol] ?? ''}` : (r[timeCol] ?? '');
-    const time = parseTime(timeText, dayOrder);
+    const stamp = parseStamp(timeText, dayOrder);
+    const time = stamp?.time ?? null;
+    const offset = stamp?.offset ?? null;
     const value = Number((r[glucoseCol] ?? '').trim().replace(',', '.'));
     if (!time || !Number.isFinite(value) || value <= 0) continue;
     const unit: Unit =
@@ -150,12 +152,13 @@ export function parseReadings(text: string, fallbackUnit: Unit): { readings: Rea
     const mmol = unit === 'mmol/L' ? value : value / 18.0182;
     const context = normalizeContext(contextCol >= 0 ? (r[contextCol] ?? '') : '');
     const note = noteCol >= 0 ? (r[noteCol] ?? '').trim() : '';
-    const id = (idCol >= 0 ? (r[idCol] ?? '').trim() : '') || legacyId(time, (r[glucoseCol] ?? '').trim(), unit, context, note);
+    const id = (idCol >= 0 ? (r[idCol] ?? '').trim() : '') || legacyId(new Date(instantMs(time, offset)), (r[glucoseCol] ?? '').trim(), unit, context, note);
     const updatedText = updatedCol >= 0 ? (r[updatedCol] ?? '').trim() : '';
-    const updated = updatedText ? (parseTime(updatedText)?.getTime() ?? time.getTime()) : time.getTime();
+    const taken = instantMs(time, offset);
+    const updated = updatedText ? (parseTime(updatedText)?.getTime() ?? taken) : taken;
     const deletedText = deletedCol >= 0 ? (r[deletedCol] ?? '').trim() : '';
     const deleted = deletedText ? (parseTime(deletedText)?.getTime() ?? null) : null;
-    out.push({ id, time, mmol, unit, context, note, updated, deleted });
+    out.push({ id, time, offset, mmol, unit, context, note, updated, deleted });
   }
   out.sort((a, b) => a.time.getTime() - b.time.getTime());
   return { readings: out, skipped: rows.length - 1 - out.length };
@@ -167,14 +170,14 @@ function valueText(r: Reading): string {
 
 /** A row as it appears on disk, without the sync columns. */
 export function contentKey(r: Reading): string {
-  return [toLocalIso(r.time), valueText(r), r.unit, r.context, r.note, r.deleted ? 'deleted' : ''].join('\u001f');
+  return [toLocalIso(r.time, false, r.offset), valueText(r), r.unit, r.context, r.note, r.deleted ? 'deleted' : ''].join('\u001f');
 }
 
 /** The full file, including sync columns and deleted rows kept as tombstones. */
 export function readingsToCsv(readings: Reading[]): string {
   const sorted = [...readings].sort((a, b) => a.time.getTime() - b.time.getTime());
   const rows = sorted.map((r) => [
-    toLocalIso(r.time),
+    toLocalIso(r.time, false, r.offset),
     valueText(r),
     r.unit,
     r.context,
@@ -189,6 +192,6 @@ export function readingsToCsv(readings: Reading[]): string {
 /** A tidy five-column file for sharing, without deleted rows or sync columns. */
 export function readingsToCleanCsv(readings: Reading[]): string {
   const sorted = readings.filter((r) => !r.deleted).sort((a, b) => a.time.getTime() - b.time.getTime());
-  const rows = sorted.map((r) => [toLocalIso(r.time), valueText(r), r.unit, r.context, r.note]);
+  const rows = sorted.map((r) => [toLocalIso(r.time, false, r.offset), valueText(r), r.unit, r.context, r.note]);
   return serializeCsv([CLEAN_HEADER, ...rows]);
 }

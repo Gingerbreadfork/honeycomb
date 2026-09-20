@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { isTauri } from './platform';
 import type { Reading, Unit } from './glucose';
-import { parseTime, toLocalIso } from './time';
+import { parseStamp, toLocalIso } from './time';
 
 export interface DeviceInfo {
   id: string;
@@ -52,7 +52,7 @@ interface Row {
 function toRow(r: Reading): Row {
   return {
     id: r.id,
-    time: toLocalIso(r.time),
+    time: toLocalIso(r.time, false, r.offset),
     mmol: r.mmol,
     unit: r.unit,
     context: r.context,
@@ -63,11 +63,12 @@ function toRow(r: Reading): Row {
 }
 
 function fromRow(row: Row): Reading | null {
-  const time = parseTime(row.time);
-  if (!time || !Number.isFinite(row.mmol)) return null;
+  const stamp = parseStamp(row.time);
+  if (!stamp || !Number.isFinite(row.mmol)) return null;
   return {
     id: row.id,
-    time,
+    time: stamp.time,
+    offset: stamp.offset,
     mmol: row.mmol,
     unit: (row.unit === 'mg/dL' ? 'mg/dL' : 'mmol/L') as Unit,
     context: (['fasting', 'before meal', 'after meal', 'bedtime'].includes(row.context) ? row.context : '') as Reading['context'],

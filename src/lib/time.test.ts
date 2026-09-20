@@ -43,3 +43,35 @@ describe('detectDayOrder', () => {
     ]);
   });
 });
+
+describe('reading times keep their own clock', () => {
+  it('shows the wall time that was recorded and writes the same text back', async () => {
+    const { parseStamp, instantMs, toLocalIso } = await import('./time');
+    for (const text of ['2026-09-15T08:42:00-03:30', '2026-01-20T23:05:10+13:00', '2026-06-01T12:00:00+00:00']) {
+      const stamp = parseStamp(text)!;
+      expect([stamp.time.getHours(), stamp.time.getMinutes()]).toEqual([+text.slice(11, 13), +text.slice(14, 16)]);
+      expect(instantMs(stamp.time, stamp.offset)).toBe(Date.parse(text));
+      expect(toLocalIso(stamp.time, false, stamp.offset)).toBe(text);
+    }
+  });
+
+  it('treats a time without an offset, or in UTC "Z", as this device\'s', async () => {
+    const { parseStamp, instantMs } = await import('./time');
+    const bare = parseStamp('2026-09-15 08:42')!;
+    expect(bare.offset).toBeNull();
+    expect(instantMs(bare.time, bare.offset)).toBe(bare.time.getTime());
+    const utc = parseStamp('2026-09-15T08:42:00Z')!;
+    expect(utc.offset).toBeNull();
+    expect(utc.time.getTime()).toBe(Date.parse('2026-09-15T08:42:00Z'));
+  });
+
+  it('survives a trip through the data file', async () => {
+    const { readingsFromCsv, readingsToCsv } = await import('./csv');
+    const file = 'time,glucose,unit,context,note,id,updated,deleted\n2026-09-15T08:42:00-07:00,6.4,mmol/L,fasting,,abc,2026-09-15T08:42:07.512-07:00,\n';
+    const rows = readingsFromCsv(file, 'mmol/L');
+    expect(rows[0].time.getHours()).toBe(8);
+    expect(rows[0].offset).toBe(-420);
+    expect(rows[0].updated).toBe(Date.parse('2026-09-15T08:42:07.512-07:00'));
+    expect(readingsToCsv(rows).split('\n')[1].startsWith('2026-09-15T08:42:00-07:00,')).toBe(true);
+  });
+});

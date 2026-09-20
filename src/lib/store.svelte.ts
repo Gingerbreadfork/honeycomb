@@ -243,7 +243,7 @@ class Store {
   }
 
   add(input: ReadingInput): Reading {
-    const reading: Reading = { id: newId(), unit: this.settings.unit, updated: Date.now(), deleted: null, ...input };
+    const reading: Reading = { id: newId(), unit: this.settings.unit, updated: Date.now(), deleted: null, offset: -input.time.getTimezoneOffset(), ...input };
     this.rows = [...this.rows, reading].sort((a, b) => a.time.getTime() - b.time.getTime());
     this.lastSaved = reading;
     void this.persist();

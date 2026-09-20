@@ -125,7 +125,10 @@ export function contextLabel(c: Context): string {
 
 export interface Reading {
   id: string;
+  /** Wall-clock time where the reading was taken; see `offset`. */
   time: Date;
+  /** That place's zone in minutes east of UTC. Missing means this device's zone. */
+  offset?: number | null;
   mmol: number;
   unit: Unit;
   context: Context;
