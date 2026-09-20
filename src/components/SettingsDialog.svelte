@@ -40,7 +40,8 @@
     const path = await pickSavePath(app.dataPath || 'readings.csv');
     if (!path) return;
     await app.updateSettings({ dataFile: path });
-    app.toast(`Now using ${path.split('/').pop()}`);
+    const name = path.split('/').pop();
+    app.toast(app.sync.configured ? `Now using ${name}. Paired devices will sync their readings into it.` : `Now using ${name}`);
   }
 
   async function useDefault(): Promise<void> {

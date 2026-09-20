@@ -129,6 +129,12 @@ export class SyncState {
     void invoke('sync_set_rows', { rows: readings.map(toRow) }).catch(() => {});
   }
 
+  /** Drops what the engine holds and starts again from these rows. */
+  replace(readings: Reading[]): void {
+    if (!isTauri) return;
+    void invoke('sync_replace_rows', { rows: readings.map(toRow) }).catch(() => {});
+  }
+
   syncNow(): void {
     if (!isTauri) return;
     void invoke('sync_now').catch(() => {});

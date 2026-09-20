@@ -105,8 +105,13 @@ function unitFrom(raw: string): Unit | null {
 }
 
 export function readingsFromCsv(text: string, fallbackUnit: Unit): Reading[] {
+  return parseReadings(text, fallbackUnit).readings;
+}
+
+/** `skipped` counts data lines that had no usable time or value. */
+export function parseReadings(text: string, fallbackUnit: Unit): { readings: Reading[]; skipped: number } {
   const rows = parseCsv(text);
-  if (!rows.length) return [];
+  if (!rows.length) return { readings: [], skipped: 0 };
   const headers = rows[0].map((h) => h.trim().toLowerCase());
   let timeCol = findCol(headers, COLS.time);
   const dateCol = COLS.date.map((n) => headers.indexOf(n)).find((i) => i >= 0) ?? -1;
@@ -125,7 +130,7 @@ export function readingsFromCsv(text: string, fallbackUnit: Unit): Reading[] {
     clockCol = timeCol;
     timeCol = dateCol;
   }
-  if (timeCol < 0 || glucoseCol < 0) return [];
+  if (timeCol < 0 || glucoseCol < 0) return { readings: [], skipped: rows.length - 1 };
   const headerUnit = unitFrom(headers[glucoseCol]);
 
   const out: Reading[] = [];
@@ -147,11 +152,16 @@ export function readingsFromCsv(text: string, fallbackUnit: Unit): Reading[] {
     out.push({ id, time, mmol, unit, context, note, updated, deleted });
   }
   out.sort((a, b) => a.time.getTime() - b.time.getTime());
-  return out;
+  return { readings: out, skipped: rows.length - 1 - out.length };
 }
 
 function valueText(r: Reading): string {
   return r.unit === 'mmol/L' ? (Math.round(r.mmol * 10) / 10).toFixed(1) : String(Math.round(r.mmol * 18.0182));
+}
+
+/** A row as it appears on disk, without the sync columns. */
+export function contentKey(r: Reading): string {
+  return [toLocalIso(r.time), valueText(r), r.unit, r.context, r.note, r.deleted ? 'deleted' : ''].join('\u001f');
 }
 
 /** The full file, including sync columns and deleted rows kept as tombstones. */

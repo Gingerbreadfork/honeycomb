@@ -482,6 +482,11 @@ impl SyncEngine {
         }
     }
 
+    pub fn replace_rows(&self, rows: Vec<Row>) {
+        self.inner.lock().unwrap().rows = rows.into_iter().map(|r| (r.id.clone(), r)).collect();
+        self.wake.notify_one();
+    }
+
     pub fn set_device_name(&self, name: String) {
         let name = name.trim().to_string();
         if name.is_empty() {

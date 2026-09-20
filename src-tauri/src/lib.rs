@@ -133,6 +133,12 @@ fn sync_set_rows(state: State<'_, SyncHandle>, rows: Vec<Row>) -> Result<(), Str
 }
 
 #[tauri::command]
+fn sync_replace_rows(state: State<'_, SyncHandle>, rows: Vec<Row>) -> Result<(), String> {
+    engine(&state)?.replace_rows(rows);
+    Ok(())
+}
+
+#[tauri::command]
 fn sync_now(state: State<'_, SyncHandle>) -> Result<(), String> {
     engine(&state)?.request_sync();
     Ok(())
@@ -251,6 +257,7 @@ pub fn run() {
             sync_snapshot,
             sync_start,
             sync_set_rows,
+            sync_replace_rows,
             sync_now,
             sync_start_pairing,
             sync_cancel_pairing,

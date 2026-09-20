@@ -1,9 +1,10 @@
-import { readingsFromCsv, readingsToCsv, newId } from './csv';
+import { parseReadings, readingsFromCsv, readingsToCsv, newId } from './csv';
 import { DEFAULT_TARGETS, type Context, type Reading, type Targets, type Unit } from './glucose';
 import { appPaths, fileMtime, quitApp, readText, setBackgroundMode, writeText, win, isTauri, type AppPaths } from './platform';
 import { SyncState } from './sync.svelte';
 import { planImport, type ImportPlan } from './import';
 import { mergeSynced } from './merge';
+import { dedupeIds, reconcileExternal } from './reconcile';
 import { pickCsvText } from './platform';
 import { setHour12, systemHour12 } from './time';
 
@@ -82,6 +83,7 @@ class Store {
   dataPath = $derived(this.settings.dataFile ?? this.paths?.data_file ?? '');
 
   private fileMtime: number | null = null;
+  private writtenIds = new Set<string>();
   private toastSeq = 0;
   private queue: Promise<void> = Promise.resolve();
 
@@ -143,7 +145,7 @@ class Store {
     this.applyClock();
     await this.persistSettings();
     if (patch.background !== undefined) void setBackgroundMode(this.settings.background);
-    if (fileChanged) await this.loadReadings();
+    if (fileChanged) await this.loadReadings('switch');
   }
 
   applyTheme(): void {
@@ -158,26 +160,44 @@ class Store {
     this.now = new Date();
   }
 
-  async loadReadings(): Promise<void> {
+  /** 'external' folds a hand-edited file into memory; 'switch' restarts the sync engine from the new file. */
+  async loadReadings(mode: 'open' | 'external' | 'switch' = 'open'): Promise<void> {
     this.loadError = null;
     try {
       const text = await readText(this.dataPath);
-      this.rows = text ? readingsFromCsv(text, this.settings.unit) : [];
-      this.fileMtime = await fileMtime(this.dataPath);
-      if (this.ready) this.sync.push(this.rows);
+      const mtime = await fileMtime(this.dataPath);
+      const parsed = text ? parseReadings(text, this.settings.unit) : { readings: [], skipped: 0 };
+      const unique = dedupeIds(parsed.readings);
+      let rows = unique.rows;
+      let rewrite = unique.changed;
+      if (mode === 'external' && text !== null) {
+        const edit = reconcileExternal(this.rows, rows, this.writtenIds, parsed.skipped === 0);
+        rows = edit.rows;
+        rewrite = true;
+        if (edit.kept) this.toast(`Kept ${edit.kept} reading${edit.kept === 1 ? '' : 's'} missing from the file. Delete them here to remove them everywhere.`);
+      }
+      this.rows = rows;
+      this.fileMtime = mtime;
+      this.writtenIds = new Set(parsed.readings.map((r) => r.id));
+      if (mode === 'switch') this.sync.replace(rows);
+      else if (this.ready) this.sync.push(rows);
+      if (rewrite) void this.persist(false);
     } catch (e) {
       this.rows = [];
       this.loadError = String(e);
     }
   }
 
-  private async checkExternalChange(): Promise<void> {
-    if (!this.ready || !this.dataPath) return;
-    const m = await fileMtime(this.dataPath);
-    if (m !== this.fileMtime) {
-      await this.loadReadings();
+  /** Runs after any queued writes, so the app's own saves are never mistaken for outside edits. */
+  private checkExternalChange(): Promise<void> {
+    this.queue = this.queue.then(async () => {
+      if (!this.ready || !this.dataPath) return;
+      const m = await fileMtime(this.dataPath);
+      if (m === this.fileMtime) return;
+      await this.loadReadings('external');
       if (m !== null) this.toast('Readings reloaded from file');
-    }
+    });
+    return this.queue;
   }
 
   private persist(push = true): Promise<void> {
@@ -186,6 +206,7 @@ class Store {
     this.queue = this.queue.then(async () => {
       try {
         this.fileMtime = await writeText(this.dataPath, readingsToCsv(snapshot));
+        this.writtenIds = new Set(snapshot.map((r) => r.id));
       } catch (e) {
         this.toast(`Could not save: ${String(e)}`);
       }
