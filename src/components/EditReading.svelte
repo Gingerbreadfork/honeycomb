@@ -1,7 +1,7 @@
 <script lang="ts">
   import { app } from '../lib/store.svelte';
   import { CONTEXTS, formatValue, inputHint, parseInput, STATUS_LABEL, statusOf, toneOf, type Context, type Reading } from '../lib/glucose';
-  import { dateInputValue, fromInputs, timeInputValue } from '../lib/time';
+  import { dateInputValue, fromInputs, isFuture, timeInputValue } from '../lib/time';
   import Dialog from './Dialog.svelte';
   import Icon from './Icon.svelte';
 
@@ -9,11 +9,10 @@
 
   const unit = app.settings.unit;
   // svelte-ignore state_referenced_locally
-  let text = $state(formatValue(reading.mmol, unit));
-  // svelte-ignore state_referenced_locally
-  let date = $state(dateInputValue(reading.time));
-  // svelte-ignore state_referenced_locally
-  let time = $state(timeInputValue(reading.time));
+  const shown = { text: formatValue(reading.mmol, unit), date: dateInputValue(reading.time), time: timeInputValue(reading.time) };
+  let text = $state(shown.text);
+  let date = $state(shown.date);
+  let time = $state(shown.time);
   // svelte-ignore state_referenced_locally
   let context = $state<Context>(reading.context);
   // svelte-ignore state_referenced_locally
@@ -22,12 +21,16 @@
   const mmol = $derived(parseInput(text, unit));
   const hint = $derived(inputHint(text, unit));
   const when = $derived(fromInputs(date, time));
+  const future = $derived(when !== null && isFuture(when, app.now));
   const status = $derived(mmol === null ? null : statusOf(mmol, app.settings.targets));
-  const valid = $derived(mmol !== null && when !== null);
+  const valid = $derived(mmol !== null && when !== null && !future);
 
   function save(): void {
-    if (mmol === null || !when) return;
-    app.update(reading.id, { mmol, time: when, context, note: note.trim(), unit });
+    if (mmol === null || !when || future) return;
+    // Untouched fields keep their stored value rather than the rounded one on screen.
+    const value = text.trim() === shown.text ? {} : { mmol, unit };
+    const at = date === shown.date && time === shown.time ? {} : { time: when };
+    app.update(reading.id, { ...value, ...at, context, note: note.trim() });
     onclose();
     app.toast('Reading updated');
   }
@@ -69,6 +72,9 @@
         <span class="lbl">Time</span>
         <input class="field tnum" type="time" bind:value={time} />
       </label>
+      {#if future}
+        <p class="future">That time hasn't happened yet.</p>
+      {/if}
     </div>
 
     <div class="ctx">
@@ -137,6 +143,11 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 12px;
+  }
+  .future {
+    grid-column: 1 / -1;
+    font-size: 13px;
+    color: var(--danger-text);
   }
   .ctx {
     display: flex;

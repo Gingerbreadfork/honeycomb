@@ -97,6 +97,11 @@ export function fromInputs(date: string, time: string): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
+/** A few minutes of slack covers a phone and a computer whose clocks disagree. */
+export function isFuture(d: Date, now = new Date()): boolean {
+  return d.getTime() > now.getTime() + 5 * 60_000;
+}
+
 export function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }

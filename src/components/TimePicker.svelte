@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { dateInputValue, fmtDateTime, fromInputs, timeInputValue } from '../lib/time';
+  import { dateInputValue, fmtDateTime, fromInputs, isFuture, timeInputValue } from '../lib/time';
   import Icon from './Icon.svelte';
 
   let { value, pinned, onchange }: { value: Date; pinned: boolean; onchange: (d: Date | null) => void } = $props();
@@ -30,9 +30,12 @@
     open = false;
   }
 
+  const typed = $derived(fromInputs(date, time));
+  const future = $derived(typed !== null && isFuture(typed));
+
   function apply(): void {
-    const d = fromInputs(date, time);
-    if (d) onchange(d);
+    if (future) return;
+    if (typed) onchange(typed);
     open = false;
   }
 
@@ -88,9 +91,12 @@
           <input class="field" type="time" bind:value={time} />
         </label>
       </div>
+      {#if future}
+        <p class="future">That time hasn't happened yet.</p>
+      {/if}
       <div class="actions">
         <button type="button" class="btn small ghost" onclick={() => (open = false)}>Cancel</button>
-        <button type="button" class="btn small primary" onclick={apply}>Set time</button>
+        <button type="button" class="btn small primary" onclick={apply} disabled={future}>Set time</button>
       </div>
     </div>
   {/if}
@@ -190,6 +196,11 @@
   .manual input {
     width: 100%;
     font-variant-numeric: tabular-nums;
+  }
+  .future {
+    margin-top: 10px;
+    font-size: 13px;
+    color: var(--danger-text);
   }
   .actions {
     display: flex;
