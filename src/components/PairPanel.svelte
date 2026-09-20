@@ -2,6 +2,8 @@
   import { app } from '../lib/store.svelte';
   import { copyText } from '../lib/platform';
   import Icon from './Icon.svelte';
+  import QrCode from './QrCode.svelte';
+  import { pairingQrText } from '../lib/qr';
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -15,7 +17,7 @@
 
   const snap = $derived(app.sync.snapshot);
   const nearby = $derived(snap?.nearby.filter((n) => !n.paired) ?? []);
-  const remaining = $derived(Math.max(1, Math.ceil((expires - app.now.getTime()) / 60000)));
+  const remaining = $derived(Math.max(1, Math.round((expires - app.now.getTime()) / 60000)));
   const expired = $derived(code !== '' && expires <= app.now.getTime());
 
   async function showCode(): Promise<void> {
@@ -85,14 +87,17 @@
   </div>
 
   {#if mode === 'show'}
-    <p class="hint">On the other computer, open Settings, choose Pair a device, then Enter a code.</p>
+    <p class="hint">On the other device, open Settings, choose Pair a device, then Enter a code. A phone can scan the square instead of typing.</p>
     {#if expired}
       <div class="row">
         <span class="muted">That code has expired.</span>
         <button type="button" class="btn small" onclick={showCode}>Show a new code</button>
       </div>
     {:else if code}
-      <div class="code" aria-label="Pairing code">{code}</div>
+      <div class="show">
+        <QrCode text={pairingQrText(code)} label="Pairing code as a QR code" />
+        <div class="code" aria-label="Pairing code">{code}</div>
+      </div>
       <div class="row">
         <button type="button" class="btn small" onclick={copy}><Icon name="copy" size={14} /> {copied ? 'Copied' : 'Copy code'}</button>
         <span class="muted">Works once, for {remaining} more minute{remaining === 1 ? '' : 's'}.</span>
@@ -180,7 +185,18 @@
     font-size: 13px;
     color: var(--ink-2);
   }
+  .show {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+  }
+  :global(.app.mobile) .show {
+    flex-direction: column;
+    align-items: center;
+  }
   .code {
+    flex: 1;
+    min-width: 0;
     font-variant-numeric: tabular-nums;
     font-size: 15px;
     letter-spacing: 0.04em;
