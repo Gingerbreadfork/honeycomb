@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_TARGETS, formatValue, gmi, parseInput, statusOf, toMmol } from './glucose';
+import { DEFAULT_TARGETS, formatValue, gmi, parseInput, statusOf, targetsProblem, toMmol } from './glucose';
 
 describe('glucose', () => {
   it('parses input in either unit and rejects junk', () => {
@@ -8,6 +8,15 @@ describe('glucose', () => {
     expect(parseInput('0.5', 'mmol/L')).toBeNull();
     expect(parseInput('abc', 'mmol/L')).toBeNull();
     expect(parseInput('', 'mmol/L')).toBeNull();
+  });
+
+  it('keeps targets inside the very-low and very-high marks', () => {
+    expect(targetsProblem(3.9, 10, 'mmol/L')).toBeNull();
+    expect(targetsProblem(54, 250, 'mg/dL')).toBeNull();
+    expect(targetsProblem(2.5, 10, 'mmol/L')).toMatch(/low target/);
+    expect(targetsProblem(70, 300, 'mg/dL')).toMatch(/high target/);
+    expect(targetsProblem(8, 8, 'mmol/L')).toMatch(/above the low/);
+    expect(targetsProblem(NaN, 10, 'mmol/L')).toMatch(/numbers/);
   });
 
   it('classifies against the target range', () => {

@@ -66,6 +66,17 @@ export const DEFAULT_TARGETS: Targets = { low: 3.9, high: 10.0 };
 export const VERY_LOW = 3.0;
 export const VERY_HIGH = 13.9;
 
+/** Checks typed targets in the display unit; they have to sit inside the fixed very-low and very-high marks. */
+export function targetsProblem(low: number, high: number, unit: Unit): string | null {
+  if (!Number.isFinite(low) || !Number.isFinite(high)) return 'Targets need to be numbers';
+  const floor = roundForUnit(fromMmol(VERY_LOW, unit), unit);
+  const ceiling = roundForUnit(fromMmol(VERY_HIGH, unit), unit);
+  if (low < floor) return `The low target can't be under ${formatValue(VERY_LOW, unit)} ${unit}, where readings count as very low`;
+  if (high > ceiling) return `The high target can't be over ${formatValue(VERY_HIGH, unit)} ${unit}, where readings count as very high`;
+  if (high <= low) return 'The high target has to be above the low one';
+  return null;
+}
+
 export function statusOf(mmol: number, t: Targets): Status {
   if (mmol < VERY_LOW) return 'very-low';
   if (mmol < t.low) return 'low';

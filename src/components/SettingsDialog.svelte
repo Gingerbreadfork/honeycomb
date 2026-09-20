@@ -1,6 +1,6 @@
 <script lang="ts">
   import { app, type Clock, type Theme } from '../lib/store.svelte';
-  import { DEFAULT_TARGETS, formatValue, fromMmol, roundForUnit, toMmol, type Unit, UNITS } from '../lib/glucose';
+  import { DEFAULT_TARGETS, formatValue, roundForUnit, targetsProblem, toMmol, type Unit, UNITS } from '../lib/glucose';
   import { isDesktop, pickSavePath, reveal } from '../lib/platform';
   import Dialog from './Dialog.svelte';
   import Icon from './Icon.svelte';
@@ -13,25 +13,28 @@
   let low = $state(formatValue(app.settings.targets.low, app.settings.unit));
   let high = $state(formatValue(app.settings.targets.high, app.settings.unit));
   let name = $state(app.settings.name);
+  let targetError = $state<string | null>(null);
 
   function setUnit(u: Unit): void {
     void app.updateSettings({ unit: u });
+    targetError = null;
     low = formatValue(app.settings.targets.low, u);
     high = formatValue(app.settings.targets.high, u);
   }
 
   function commitTargets(): void {
-    const l = Number(low.replace(',', '.'));
-    const h = Number(high.replace(',', '.'));
-    if (Number.isFinite(l) && Number.isFinite(h) && l > 0 && h > l) {
-      void app.updateSettings({ targets: { low: toMmol(roundForUnit(l, unit), unit), high: toMmol(roundForUnit(h, unit), unit) } });
-    }
+    const l = roundForUnit(Number(low.trim().replace(',', '.') || NaN), unit);
+    const h = roundForUnit(Number(high.trim().replace(',', '.') || NaN), unit);
+    targetError = targetsProblem(l, h, unit);
+    if (targetError) return;
+    void app.updateSettings({ targets: { low: toMmol(l, unit), high: toMmol(h, unit) } });
     low = formatValue(app.settings.targets.low, unit);
     high = formatValue(app.settings.targets.high, unit);
   }
 
   function resetTargets(): void {
     void app.updateSettings({ targets: { ...DEFAULT_TARGETS } });
+    targetError = null;
     low = formatValue(DEFAULT_TARGETS.low, unit);
     high = formatValue(DEFAULT_TARGETS.high, unit);
   }
@@ -90,6 +93,9 @@
         <span class="unit">{unit}</span>
         <button type="button" class="btn small ghost" onclick={resetTargets}>Reset</button>
       </div>
+      {#if targetError}
+        <p class="problem" role="alert">{targetError}</p>
+      {/if}
     </section>
 
     <section>
@@ -194,6 +200,10 @@
   .pair input {
     width: 76px;
     text-align: center;
+  }
+  .problem {
+    font-size: 13px;
+    color: var(--danger-text);
   }
   .to,
   .unit {
