@@ -15,6 +15,7 @@ export interface PeerState {
   last_sync: number | null;
   online: boolean;
   syncing: boolean;
+  unpaired: boolean;
 }
 
 export interface NearbyDevice {

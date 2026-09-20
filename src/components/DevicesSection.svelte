@@ -8,7 +8,8 @@
   let pairing = $state(false);
   const snap = $derived(app.sync.snapshot);
 
-  function peerLine(p: { syncing: boolean; online: boolean; last_sync: number | null }): string {
+  function peerLine(p: { syncing: boolean; online: boolean; unpaired: boolean; last_sync: number | null }): string {
+    if (p.unpaired) return 'Removed on that device';
     if (p.syncing) return 'Syncing';
     if (p.last_sync) return `Synced ${fmtRelative(p.last_sync, app.now.getTime())}`;
     if (p.online) return 'Connected';

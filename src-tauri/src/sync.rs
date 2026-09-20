@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -7,7 +7,7 @@ use std::{
 
 use iroh::{
     address_lookup::UserData,
-    endpoint::{presets, Connection},
+    endpoint::{presets, Connection, ConnectionError, VarInt},
     Endpoint, EndpointAddr, EndpointId, SecretKey, TransportAddr,
 };
 #[cfg(not(target_os = "android"))]
@@ -28,6 +28,7 @@ const PAIRING_TTL: Duration = Duration::from_secs(10 * 60);
 const SYNC_INTERVAL: Duration = Duration::from_secs(120);
 const CHANGE_DEBOUNCE: Duration = Duration::from_millis(1500);
 const MAX_DEVICE_NAME: usize = 60;
+const CLOSE_NOT_PAIRED: u32 = 1;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Row {
@@ -118,6 +119,8 @@ pub struct PeerState {
     pub last_sync: Option<u64>,
     pub online: bool,
     pub syncing: bool,
+    /// The other device has removed this one.
+    pub unpaired: bool,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -161,6 +164,7 @@ struct Inner {
     rows: BTreeMap<String, Row>,
     online: HashMap<String, bool>,
     syncing: HashMap<String, bool>,
+    unpaired: HashSet<String>,
     nearby: HashMap<String, (String, EndpointAddr)>,
     pairing: Option<Pairing>,
     pending: HashMap<u64, oneshot::Sender<bool>>,
@@ -379,6 +383,7 @@ impl SyncEngine {
                 rows: BTreeMap::new(),
                 online: HashMap::new(),
                 syncing: HashMap::new(),
+                unpaired: HashSet::new(),
                 nearby: HashMap::new(),
                 pairing: None,
                 pending: HashMap::new(),
@@ -481,6 +486,7 @@ impl SyncEngine {
                     last_sync: p.last_sync,
                     online: *g.online.get(&p.id).unwrap_or(&false),
                     syncing: *g.syncing.get(&p.id).unwrap_or(&false),
+                    unpaired: g.unpaired.contains(&p.id),
                 })
                 .collect(),
             nearby: g
@@ -532,6 +538,7 @@ impl SyncEngine {
             let mut g = self.inner.lock().unwrap();
             g.peers.retain(|p| p.id != id);
             g.online.remove(id);
+            g.unpaired.remove(id);
         }
         self.save();
         self.emit_state();
@@ -555,6 +562,7 @@ impl SyncEngine {
     fn add_peer(&self, device: &DeviceInfo, addr: EndpointAddr) {
         let name = clean_device_name(&device.name);
         let mut g = self.inner.lock().unwrap();
+        g.unpaired.remove(&device.id);
         if let Some(p) = g.peers.iter_mut().find(|p| p.id == device.id) {
             p.name = name;
             p.addr = addr;
@@ -660,7 +668,7 @@ impl SyncEngine {
         let remote = conn.remote_id();
         let pairing = alpn == ALPN_PAIR;
         if !pairing && !self.inner.lock().unwrap().peers.iter().any(|p| p.id == remote.to_string()) {
-            conn.close(1u32.into(), b"not paired");
+            conn.close(CLOSE_NOT_PAIRED.into(), b"not paired");
             return Ok(());
         }
         let limit = if pairing { MAX_PAIR_MESSAGE } else { MAX_MESSAGE };
@@ -762,7 +770,10 @@ impl SyncEngine {
     }
 
     async fn sync_all(&self) {
-        let peers: Vec<Peer> = self.inner.lock().unwrap().peers.clone();
+        let peers: Vec<Peer> = {
+            let g = self.inner.lock().unwrap();
+            g.peers.iter().filter(|p| !g.unpaired.contains(&p.id)).cloned().collect()
+        };
         for peer in peers {
             self.inner.lock().unwrap().syncing.insert(peer.id.clone(), true);
             self.emit_state();
@@ -789,7 +800,16 @@ impl SyncEngine {
                 .map_err(|_| "timeout".to_string())?
                 .map_err(|e| e.to_string())?,
         };
-        let response = within(IO_TIMEOUT, request(&conn, &Message::Sync { device: self.device(), addr: self.my_addr(), rows }, MAX_MESSAGE)).await?;
+        let response = within(IO_TIMEOUT, request(&conn, &Message::Sync { device: self.device(), addr: self.my_addr(), rows }, MAX_MESSAGE)).await;
+        let turned_away = match (&response, conn.close_reason()) {
+            (Ok(Message::PairRejected { .. }), _) => true,
+            (Err(_), Some(ConnectionError::ApplicationClosed(close))) => close.error_code == VarInt::from_u32(CLOSE_NOT_PAIRED),
+            _ => false,
+        };
+        if turned_away {
+            self.inner.lock().unwrap().unpaired.insert(peer.id.clone());
+        }
+        let response = response?;
         conn.close(0u32.into(), b"done");
         match response {
             Message::SyncOk { device, addr, rows } => {
