@@ -120,8 +120,9 @@ After pairing, sync is automatic: on startup, after every change, when the windo
 and every couple of minutes. Both devices need to be running for a sync to happen. On a desktop
 you can turn on "Keep syncing after the window is closed" so it stays reachable in the background.
 
-How it works: every reading carries an id and a last-edited stamp, deletions are kept as hidden
-tombstones, and each sync exchanges full state and keeps the newer version of each row. Edits and
+How it works: every reading carries an id and a last-edited stamp, and deletions are kept as hidden
+tombstones for two years. A sync first compares a fingerprint of both sides; only when they differ
+do the devices exchange their rows and keep the newer version of each. Edits and
 removals made while apart merge cleanly in both directions. Connections use
 [iroh](https://iroh.computer): encrypted QUIC keyed to each device's identity, direct wherever
 possible, with public relay servers used only to get through home routers. Relays never see your

@@ -4,7 +4,7 @@ import { appPaths, backupFile, fileMtime, quitApp, readText, setBackgroundMode, 
 import { SyncState } from './sync.svelte';
 import { planImport, type ImportPlan } from './import';
 import { mergeSynced } from './merge';
-import { dedupeIds, reconcileExternal } from './reconcile';
+import { dedupeIds, dropExpiredTombstones, reconcileExternal } from './reconcile';
 import { pickCsvText } from './platform';
 import { dayKey, setHour12, systemHour12 } from './time';
 
@@ -177,8 +177,9 @@ class Store {
       const mtime = await fileMtime(this.dataPath);
       const parsed = text ? parseReadings(text, this.settings.unit) : { readings: [], skipped: 0 };
       const unique = dedupeIds(parsed.readings);
-      let rows = unique.rows;
-      let rewrite = unique.changed;
+      const current = dropExpiredTombstones(unique.rows);
+      let rows = current.rows;
+      let rewrite = unique.changed || current.changed;
       if (mode === 'external' && text !== null) {
         const edit = reconcileExternal(this.rows, rows, this.writtenIds, parsed.skipped === 0);
         rows = edit.rows;
@@ -237,7 +238,7 @@ class Store {
       await backupFile(this.dataPath, dayKey(new Date()), BACKUPS_KEPT);
       this.backedUp = mark;
     } catch {
-      // A failed backup must not stop the reading from being saved.
+      // Saving goes ahead without a backup.
     }
   }
 

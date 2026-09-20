@@ -4,6 +4,14 @@ import type { Reading } from './glucose';
 const byTime = (a: Reading, b: Reading) => a.time.getTime() - b.time.getTime();
 const after = (r: Reading, now: number) => Math.max(now, r.updated + 1);
 
+/** How long a deletion is remembered, so a device that was away can still learn of it. Matches the sync engine. */
+export const TOMBSTONE_KEEP_MS = 730 * 24 * 60 * 60 * 1000;
+
+export function dropExpiredTombstones(rows: Reading[], now = Date.now()): { rows: Reading[]; changed: boolean } {
+  const kept = rows.filter((r) => !r.deleted || r.deleted + TOMBSTONE_KEEP_MS >= now);
+  return { rows: kept, changed: kept.length !== rows.length };
+}
+
 /** Rows sharing an id get their own; exact copies are dropped. */
 export function dedupeIds(rows: Reading[], now = Date.now(), makeId: () => string = newId): { rows: Reading[]; changed: boolean } {
   const first = new Map<string, Reading>();

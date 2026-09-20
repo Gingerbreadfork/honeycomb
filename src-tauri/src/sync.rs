@@ -29,6 +29,7 @@ const SYNC_INTERVAL: Duration = Duration::from_secs(120);
 const CHANGE_DEBOUNCE: Duration = Duration::from_millis(1500);
 const MAX_DEVICE_NAME: usize = 60;
 const CLOSE_NOT_PAIRED: u32 = 1;
+const TOMBSTONE_KEEP_MS: u64 = 730 * 24 * 60 * 60 * 1000;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Row {
@@ -109,6 +110,9 @@ enum Message {
     PairOk { device: DeviceInfo, addr: EndpointAddr },
     PairRejected { reason: String },
     Sync { device: DeviceInfo, addr: EndpointAddr, rows: Vec<Row> },
+    Check { device: DeviceInfo, addr: EndpointAddr, digest: u64 },
+    Same { device: DeviceInfo, addr: EndpointAddr },
+    Differs,
     Forget,
     SyncOk { device: DeviceInfo, addr: EndpointAddr, rows: Vec<Row> },
 }
@@ -166,6 +170,8 @@ struct Inner {
     online: HashMap<String, bool>,
     syncing: HashMap<String, bool>,
     unpaired: HashSet<String>,
+    /// Peers on a version that only understands a full exchange.
+    full_only: HashSet<String>,
     nearby: HashMap<String, (String, EndpointAddr)>,
     pairing: Option<Pairing>,
     pending: HashMap<u64, oneshot::Sender<bool>>,
@@ -215,6 +221,7 @@ pub struct SyncEngine {
     dir: PathBuf,
     inner: Arc<Mutex<Inner>>,
     wake: Arc<Notify>,
+    full_exchanges: std::sync::atomic::AtomicUsize,
 }
 
 pub type Shared = Arc<SyncEngine>;
@@ -299,10 +306,46 @@ fn beats(incoming: &Row, existing: &Row) -> bool {
     key(incoming) > key(existing)
 }
 
+/// A deletion this old is no longer passed around; every device drops it on its own.
+fn expired(row: &Row, now: u64) -> bool {
+    row.deleted.is_some_and(|at| at + TOMBSTONE_KEEP_MS < now)
+}
+
+fn live_rows(rows: &BTreeMap<String, Row>) -> Vec<Row> {
+    let now = now_ms();
+    rows.values().filter(|r| !expired(r, now)).cloned().collect()
+}
+
+/// Fingerprint of everything that syncs. `time` is left out: devices may write the same instant
+/// differently, and a changed time always comes with a new `updated`.
+fn digest_rows(rows: &BTreeMap<String, Row>) -> u64 {
+    let now = now_ms();
+    let mut h: u64 = 0xcbf29ce484222325;
+    let mut feed = |bytes: &[u8]| {
+        for b in bytes.iter().chain(&[0x1f]) {
+            h = (h ^ *b as u64).wrapping_mul(0x100000001b3);
+        }
+    };
+    for r in rows.values().filter(|r| !expired(r, now)) {
+        feed(r.id.as_bytes());
+        feed(&r.updated.to_le_bytes());
+        feed(&[r.deleted.is_some() as u8]);
+        feed(&r.mmol.to_bits().to_le_bytes());
+        feed(r.unit.as_bytes());
+        feed(r.context.as_bytes());
+        feed(r.note.as_bytes());
+    }
+    h
+}
+
 /// Keeps the newer of two rows by their `updated` stamp. Returns how many local rows changed.
 fn merge_rows(local: &mut BTreeMap<String, Row>, incoming: Vec<Row>) -> usize {
     let mut changed = 0;
+    let now = now_ms();
     for row in incoming {
+        if expired(&row, now) && !local.contains_key(&row.id) {
+            continue;
+        }
         match local.get(&row.id) {
             Some(existing) if !beats(&row, existing) => {}
             _ => {
@@ -428,6 +471,7 @@ impl SyncEngine {
                 online: HashMap::new(),
                 syncing: HashMap::new(),
                 unpaired: HashSet::new(),
+                full_only: HashSet::new(),
                 nearby: HashMap::new(),
                 pairing: None,
                 pending: HashMap::new(),
@@ -435,6 +479,7 @@ impl SyncEngine {
                 ready: false,
             })),
             wake: Arc::new(Notify::new()),
+            full_exchanges: Default::default(),
         });
 
         #[cfg(not(target_os = "android"))]
@@ -823,22 +868,32 @@ impl SyncEngine {
             conn.close(0u32.into(), b"done");
             return Ok(());
         }
+        let (mut send, msg) = match msg {
+            Message::Check { device, addr, digest } => {
+                let same = digest_rows(&self.inner.lock().unwrap().rows) == digest;
+                if same {
+                    self.note_synced(&remote.to_string(), &device, addr);
+                    let _ = reply(&mut send, &Message::Same { device: self.device(), addr: self.my_addr() }).await;
+                    wait_closed(&conn).await;
+                    self.save();
+                    self.emit_state();
+                    return Ok(());
+                }
+                reply(&mut send, &Message::Differs).await?;
+                let (send, mut recv) = within(IO_TIMEOUT, async { conn.accept_bi().await.map_err(|e| e.to_string()) }).await?;
+                (send, within(IO_TIMEOUT, read_message(&mut recv, MAX_MESSAGE)).await?)
+            }
+            other => (send, other),
+        };
         let Message::Sync { device, addr: their_addr, rows } = msg else {
             return Err("expected sync".into());
         };
         let (changed, merged) = {
             let mut g = self.inner.lock().unwrap();
             let changed = merge_rows(&mut g.rows, rows);
-            if let Some(p) = g.peers.iter_mut().find(|p| p.id == remote.to_string()) {
-                p.last_sync = Some(now_ms());
-                p.name = clean_device_name(&device.name);
-                if their_addr.id == remote && !their_addr.addrs.is_empty() {
-                    p.addr = their_addr;
-                }
-            }
-            g.online.insert(remote.to_string(), true);
-            (changed, g.rows.values().cloned().collect::<Vec<_>>())
+            (changed, live_rows(&g.rows))
         };
+        self.note_synced(&remote.to_string(), &device, their_addr);
         let _ = reply(&mut send, &Message::SyncOk { device: self.device(), addr: self.my_addr(), rows: merged }).await;
         wait_closed(&conn).await;
         self.save();
@@ -897,34 +952,70 @@ impl SyncEngine {
         }
     }
 
+    /// Records a finished exchange with a peer and keeps its name and address current.
+    fn note_synced(&self, id: &str, device: &DeviceInfo, addr: EndpointAddr) {
+        let mut g = self.inner.lock().unwrap();
+        if let Some(p) = g.peers.iter_mut().find(|p| p.id == id) {
+            p.last_sync = Some(now_ms());
+            p.name = clean_device_name(&device.name);
+            if addr.id.to_string() == id && !addr.addrs.is_empty() {
+                p.addr = addr;
+            }
+        }
+        g.online.insert(id.to_string(), true);
+    }
+
+    fn turned_away<T>(&self, conn: &Connection, peer: &Peer, response: &Result<T, String>) -> bool {
+        let refused = matches!(conn.close_reason(), Some(ConnectionError::ApplicationClosed(close)) if close.error_code == VarInt::from_u32(CLOSE_NOT_PAIRED));
+        if response.is_err() && refused {
+            self.inner.lock().unwrap().unpaired.insert(peer.id.clone());
+        }
+        response.is_err() && refused
+    }
+
+    /// Compares fingerprints first and sends rows only when they differ.
     async fn sync_peer(&self, peer: &Peer) -> Result<(), String> {
-        let rows: Vec<Row> = self.inner.lock().unwrap().rows.values().cloned().collect();
         let conn = self.connect_peer(peer).await?;
-        let response = within(IO_TIMEOUT, request(&conn, &Message::Sync { device: self.device(), addr: self.my_addr(), rows }, MAX_MESSAGE)).await;
-        let turned_away = match (&response, conn.close_reason()) {
-            (Ok(Message::PairRejected { .. }), _) => true,
-            (Err(_), Some(ConnectionError::ApplicationClosed(close))) => close.error_code == VarInt::from_u32(CLOSE_NOT_PAIRED),
-            _ => false,
-        };
-        if turned_away {
+        if self.inner.lock().unwrap().full_only.contains(&peer.id) {
+            return self.exchange_rows(&conn, peer).await;
+        }
+        let digest = digest_rows(&self.inner.lock().unwrap().rows);
+        let check = Message::Check { device: self.device(), addr: self.my_addr(), digest };
+        let answer = within(IO_TIMEOUT, request(&conn, &check, MAX_PAIR_MESSAGE)).await;
+        if self.turned_away(&conn, peer, &answer) {
+            return Err("not paired".into());
+        }
+        match answer {
+            Ok(Message::Same { device, addr }) => {
+                conn.close(0u32.into(), b"done");
+                self.note_synced(&peer.id, &device, addr);
+                self.save();
+                Ok(())
+            }
+            Ok(Message::Differs) => self.exchange_rows(&conn, peer).await,
+            _ => {
+                // 0.1.3 hangs up on a message it doesn't know; it still takes a full exchange.
+                let conn = self.connect_peer(peer).await?;
+                self.exchange_rows(&conn, peer).await?;
+                self.inner.lock().unwrap().full_only.insert(peer.id.clone());
+                Ok(())
+            }
+        }
+    }
+
+    async fn exchange_rows(&self, conn: &Connection, peer: &Peer) -> Result<(), String> {
+        self.full_exchanges.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let rows = live_rows(&self.inner.lock().unwrap().rows);
+        let response = within(IO_TIMEOUT, request(conn, &Message::Sync { device: self.device(), addr: self.my_addr(), rows }, MAX_MESSAGE)).await;
+        if self.turned_away(conn, peer, &response) || matches!(response, Ok(Message::PairRejected { .. })) {
             self.inner.lock().unwrap().unpaired.insert(peer.id.clone());
         }
         let response = response?;
         conn.close(0u32.into(), b"done");
         match response {
             Message::SyncOk { device, addr, rows } => {
-                let changed = {
-                    let mut g = self.inner.lock().unwrap();
-                    let changed = merge_rows(&mut g.rows, rows);
-                    if let Some(p) = g.peers.iter_mut().find(|p| p.id == peer.id) {
-                        p.last_sync = Some(now_ms());
-                        p.name = clean_device_name(&device.name);
-                        if addr.id.to_string() == peer.id && !addr.addrs.is_empty() {
-                            p.addr = addr;
-                        }
-                    }
-                    changed
-                };
+                let changed = merge_rows(&mut self.inner.lock().unwrap().rows, rows);
+                self.note_synced(&peer.id, &device, addr);
                 self.save();
                 if changed > 0 {
                     self.emit_rows();
@@ -1026,7 +1117,7 @@ mod tests {
             let b = device("b", true).await;
             pair(&a, &b);
             a.engine.set_rows(vec![row("from-a", 10, None)]);
-            b.engine.set_rows(vec![row("from-b", 20, None), row("gone", 30, Some(30))]);
+            b.engine.set_rows(vec![row("from-b", 20, None), row("gone", 30, Some(now_ms()))]);
             a.engine.sync_all().await;
             assert_eq!(ids(&a), ["from-a", "from-b", "gone"]);
             assert_eq!(ids(&a), ids(&b));
@@ -1049,6 +1140,85 @@ mod tests {
             let peer = &a.engine.snapshot().peers[0];
             assert!(peer.unpaired && !peer.online);
         });
+    }
+
+    fn full_exchanges(d: &Device) -> usize {
+        d.engine.full_exchanges.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    #[test]
+    fn rows_are_only_sent_when_the_two_sides_differ() {
+        tauri::async_runtime::block_on(async {
+            let a = device("a", true).await;
+            let b = device("b", true).await;
+            pair(&a, &b);
+            a.engine.set_rows(vec![row("r1", 10, None)]);
+            a.engine.sync_all().await;
+            assert_eq!(full_exchanges(&a), 1);
+
+            let before = a.engine.snapshot().peers[0].last_sync;
+            tokio::time::sleep(Duration::from_millis(5)).await;
+            a.engine.sync_all().await;
+            assert_eq!(full_exchanges(&a), 1, "nothing changed, so no rows should travel");
+            assert!(a.engine.snapshot().peers[0].last_sync > before);
+
+            b.engine.set_rows(vec![row("r2", 20, None)]);
+            a.engine.sync_all().await;
+            assert_eq!(full_exchanges(&a), 2);
+            assert_eq!(ids(&a), ["r1", "r2"]);
+        });
+    }
+
+    /// Answers the way 0.1.3 does: a full exchange works, anything else gets hung up on.
+    async fn old_version_peer(rows: Vec<Row>) -> (Endpoint, DeviceInfo) {
+        let endpoint = Endpoint::builder(presets::Minimal).relay_mode(RelayMode::Disabled).alpns(vec![ALPN_SYNC.to_vec()]).bind().await.unwrap();
+        let device = DeviceInfo { id: endpoint.id().to_string(), name: "old".into() };
+        let (ep, me) = (endpoint.clone(), device.clone());
+        tauri::async_runtime::spawn(async move {
+            while let Some(incoming) = ep.accept().await {
+                let Ok(conn) = incoming.await else { continue };
+                let Ok((mut send, mut recv)) = conn.accept_bi().await else { continue };
+                if let Ok(Message::Sync { .. }) = read_message(&mut recv, MAX_MESSAGE).await {
+                    let _ = reply(&mut send, &Message::SyncOk { device: me.clone(), addr: ep.addr(), rows: rows.clone() }).await;
+                    wait_closed(&conn).await;
+                }
+            }
+        });
+        (endpoint, device)
+    }
+
+    #[test]
+    fn a_peer_on_the_old_version_still_gets_a_full_exchange() {
+        tauri::async_runtime::block_on(async {
+            let a = device("a", true).await;
+            let (old, old_device) = old_version_peer(vec![row("from-old", 5, None)]).await;
+            a.engine.add_peer(&old_device, old.addr());
+            a.engine.set_rows(vec![row("r1", 10, None)]);
+            a.engine.sync_all().await;
+            assert_eq!(ids(&a), ["from-old", "r1"]);
+            assert!(a.engine.snapshot().peers[0].online);
+            assert!(a.engine.inner.lock().unwrap().full_only.contains(&old_device.id));
+            a.engine.sync_all().await;
+            assert_eq!(full_exchanges(&a), 2, "the second round goes straight to a full exchange");
+        });
+    }
+
+    #[test]
+    fn deletions_past_their_keep_time_stop_travelling() {
+        let long_ago = now_ms() - TOMBSTONE_KEEP_MS - 1000;
+        let stale = row("stale", long_ago, Some(long_ago));
+        let mut local = BTreeMap::new();
+        assert_eq!(merge_rows(&mut local, vec![stale.clone(), row("recent", 20, Some(now_ms()))]), 1);
+        assert!(!local.contains_key("stale"));
+
+        let mut with = BTreeMap::from([("a".to_string(), row("a", 10, None))]);
+        let without = with.clone();
+        with.insert("stale".into(), stale.clone());
+        assert_eq!(digest_rows(&with), digest_rows(&without));
+        assert_eq!(live_rows(&with).len(), 1);
+
+        let mut holding_live = BTreeMap::from([("stale".to_string(), row("stale", 1, None))]);
+        assert_eq!(merge_rows(&mut holding_live, vec![stale]), 1, "a device that still shows the row takes the deletion");
     }
 
     #[test]

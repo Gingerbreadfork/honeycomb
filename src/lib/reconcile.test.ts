@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dedupeIds, reconcileExternal } from './reconcile';
+import { dedupeIds, dropExpiredTombstones, reconcileExternal, TOMBSTONE_KEEP_MS } from './reconcile';
 import type { Reading } from './glucose';
 
 const r = (id: string, minutes: number, mmol: number, updated = 100): Reading => ({
@@ -21,6 +21,16 @@ describe('dedupeIds', () => {
       ['a', 6.4, 100],
       ['fresh', 7.1, 500],
     ]);
+  });
+});
+
+describe('dropExpiredTombstones', () => {
+  it('forgets deletions older than the keep time and nothing else', () => {
+    const now = 5 * TOMBSTONE_KEEP_MS;
+    const rows = [r('live', 0, 6), { ...r('old', 1, 6), deleted: now - TOMBSTONE_KEEP_MS - 1 }, { ...r('recent', 2, 6), deleted: now - 1000 }];
+    const out = dropExpiredTombstones(rows, now);
+    expect(out.rows.map((x) => x.id)).toEqual(['live', 'recent']);
+    expect(out.changed).toBe(true);
   });
 });
 
