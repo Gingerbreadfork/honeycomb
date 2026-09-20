@@ -109,6 +109,7 @@ enum Message {
     PairOk { device: DeviceInfo, addr: EndpointAddr },
     PairRejected { reason: String },
     Sync { device: DeviceInfo, addr: EndpointAddr, rows: Vec<Row> },
+    Forget,
     SyncOk { device: DeviceInfo, addr: EndpointAddr, rows: Vec<Row> },
 }
 
@@ -324,6 +325,11 @@ async fn request(conn: &Connection, msg: &Message, limit: usize) -> Result<Messa
 
 async fn within<T>(limit: Duration, work: impl std::future::Future<Output = Result<T, String>>) -> Result<T, String> {
     tokio::time::timeout(limit, work).await.map_err(|_| "The other device stopped answering".to_string())?
+}
+
+async fn send_only(conn: &Connection, msg: &Message) -> Result<(), String> {
+    let (mut send, _recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
+    reply(&mut send, msg).await
 }
 
 /// Lets the requester read the reply and close first; dropping the connection early loses the reply.
@@ -577,15 +583,27 @@ impl SyncEngine {
         self.emit_state();
     }
 
-    pub fn forget(&self, id: &str) {
-        {
+    /// Removes the device here and, if it can be reached, tells it so.
+    pub fn forget(self: &Arc<Self>, id: &str) {
+        let removed = {
             let mut g = self.inner.lock().unwrap();
+            let removed = g.peers.iter().find(|p| p.id == id).cloned();
+            let already_gone = g.unpaired.remove(id);
             g.peers.retain(|p| p.id != id);
             g.online.remove(id);
-            g.unpaired.remove(id);
-        }
+            removed.filter(|_| !already_gone)
+        };
         self.save();
         self.emit_state();
+        if let Some(peer) = removed {
+            let e = self.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Ok(conn) = e.connect_peer(&peer).await {
+                    let _ = within(IO_TIMEOUT, send_only(&conn, &Message::Forget)).await;
+                    wait_closed(&conn).await;
+                }
+            });
+        }
     }
 
     pub async fn start_pairing(&self) -> Result<PairingState, String> {
@@ -799,6 +817,12 @@ impl SyncEngine {
             return Ok(());
         }
 
+        if matches!(msg, Message::Forget) {
+            self.inner.lock().unwrap().unpaired.insert(remote.to_string());
+            self.emit_state();
+            conn.close(0u32.into(), b"done");
+            return Ok(());
+        }
         let Message::Sync { device, addr: their_addr, rows } = msg else {
             return Err("expected sync".into());
         };
@@ -858,19 +882,24 @@ impl SyncEngine {
         }
     }
 
-    async fn sync_peer(&self, peer: &Peer) -> Result<(), String> {
-        let rows: Vec<Row> = self.inner.lock().unwrap().rows.values().cloned().collect();
+    /// Tries the saved and nearby addresses first, then looks the device up by its id alone.
+    async fn connect_peer(&self, peer: &Peer) -> Result<Connection, String> {
         let mut addr = peer.addr.clone();
         if let Some((_, nearby)) = self.inner.lock().unwrap().nearby.get(&peer.id) {
             addr = addr.with_addrs(nearby.addrs.iter().cloned());
         }
-        let conn = match tokio::time::timeout(CONNECT_TIMEOUT, self.endpoint.connect(addr, ALPN_SYNC)).await {
-            Ok(Ok(c)) => c,
+        match tokio::time::timeout(CONNECT_TIMEOUT, self.endpoint.connect(addr, ALPN_SYNC)).await {
+            Ok(Ok(c)) => Ok(c),
             _ => tokio::time::timeout(CONNECT_TIMEOUT, self.endpoint.connect(EndpointAddr::new(peer.addr.id), ALPN_SYNC))
                 .await
                 .map_err(|_| "timeout".to_string())?
-                .map_err(|e| e.to_string())?,
-        };
+                .map_err(|e| e.to_string()),
+        }
+    }
+
+    async fn sync_peer(&self, peer: &Peer) -> Result<(), String> {
+        let rows: Vec<Row> = self.inner.lock().unwrap().rows.values().cloned().collect();
+        let conn = self.connect_peer(peer).await?;
         let response = within(IO_TIMEOUT, request(&conn, &Message::Sync { device: self.device(), addr: self.my_addr(), rows }, MAX_MESSAGE)).await;
         let turned_away = match (&response, conn.close_reason()) {
             (Ok(Message::PairRejected { .. }), _) => true,
@@ -1019,6 +1048,18 @@ mod tests {
             assert!(ids(&b).is_empty());
             let peer = &a.engine.snapshot().peers[0];
             assert!(peer.unpaired && !peer.online);
+        });
+    }
+
+    #[test]
+    fn removing_a_device_tells_it_straight_away() {
+        tauri::async_runtime::block_on(async {
+            let a = device("a", true).await;
+            let b = device("b", true).await;
+            pair(&a, &b);
+            a.engine.forget(&b.engine.device().id);
+            assert!(a.engine.snapshot().peers.is_empty());
+            eventually("b learns it was removed", || b.engine.snapshot().peers[0].unpaired).await;
         });
     }
 
