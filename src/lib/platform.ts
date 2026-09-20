@@ -115,6 +115,31 @@ export async function scanQr(): Promise<string | null> {
   }
 }
 
+interface AndroidBridge {
+  print(title: string): void;
+  shareFile(name: string, mime: string, text: string): void;
+}
+
+/** Added by MainActivity; missing on other platforms and on builds older than the bridge. */
+function android(): AndroidBridge | null {
+  return (window as unknown as { HoneycombAndroid?: AndroidBridge }).HoneycombAndroid ?? null;
+}
+
+/** True where the page can be sent to a printer or saved as a PDF. */
+export const canPrint = !isMobile || android() !== null;
+/** True where a file can be handed to another app through the share sheet. */
+export const canShare = android() !== null;
+
+export function printPage(title: string): void {
+  const phone = android();
+  if (phone) phone.print(title);
+  else window.print();
+}
+
+export function shareFile(name: string, mime: string, text: string): void {
+  android()?.shareFile(name, mime, text);
+}
+
 export async function copyText(text: string): Promise<void> {
   if (isTauri) return clipWrite(text);
   await navigator.clipboard.writeText(text);

@@ -2,7 +2,7 @@
   import { app } from '../lib/store.svelte';
   import { readingsToCleanCsv } from '../lib/csv';
   import { contextLabel, formatValue, STATUS_LABEL, statusOf, toneOf } from '../lib/glucose';
-  import { copyText, exportFile, isMobile, pickSavePath } from '../lib/platform';
+  import { canPrint, canShare, copyText, exportFile, isMobile, pickSavePath, printPage, shareFile } from '../lib/platform';
   import { computeStats, filterRange, groupByDay } from '../lib/stats';
   import { addDays, dayKey, fmtDateTime, fmtLongDate, fmtRange, fmtShortDate, fmtTime, fmtWeekday } from '../lib/time';
   import Icon from '../components/Icon.svelte';
@@ -57,8 +57,7 @@
   }
 
   async function exportCsv(): Promise<void> {
-    const name = `glucose-${dayKey(from)}-to-${dayKey(last)}.csv`;
-    const path = await pickSavePath(name);
+    const path = await pickSavePath(`${fileStem}.csv`);
     if (!path) return;
     try {
       await exportFile(path, readingsToCleanCsv(rows));
@@ -77,8 +76,14 @@
     }
   }
 
+  const fileStem = $derived(`glucose-${dayKey(from)}-to-${dayKey(last)}`);
+
   function savePdf(): void {
-    window.print();
+    printPage(fileStem);
+  }
+
+  function shareCsv(): void {
+    shareFile(`${fileStem}.csv`, 'text/csv', readingsToCleanCsv(rows));
   }
 </script>
 
@@ -101,8 +106,15 @@
 
     <div class="actions">
       {#if isMobile}
-        <button type="button" class="btn primary" onclick={copySummary}><Icon name="copy" size={15} /> Copy summary</button>
-        <button type="button" class="btn" onclick={copyCsv}><Icon name="copy" size={15} /> Copy CSV</button>
+        {#if canPrint}
+          <button type="button" class="btn primary" onclick={savePdf}><Icon name="print" size={15} /> Save as PDF</button>
+        {/if}
+        {#if canShare}
+          <button type="button" class="btn" onclick={shareCsv}><Icon name="download" size={15} /> Share CSV</button>
+        {:else}
+          <button type="button" class="btn" onclick={copyCsv}><Icon name="copy" size={15} /> Copy CSV</button>
+        {/if}
+        <button type="button" class="btn" class:primary={!canPrint} onclick={copySummary}><Icon name="copy" size={15} /> Copy summary</button>
       {:else}
         <button type="button" class="btn primary" onclick={savePdf}><Icon name="print" size={15} /> Save as PDF</button>
         <button type="button" class="btn" onclick={exportCsv}><Icon name="download" size={15} /> Export CSV</button>
@@ -377,39 +389,43 @@
     line-height: 1.5;
   }
 
-  :global(.app.mobile) .scroll {
-    padding: 14px 12px 32px;
-    -webkit-overflow-scrolling: touch;
+  /* Screen only, so a report printed from a phone gets the full-width sheet. */
+  @media screen {
+    :global(.app.mobile) .scroll {
+      padding: 14px 12px 32px;
+      -webkit-overflow-scrolling: touch;
+    }
+    :global(.app.mobile) h2 {
+      font-size: 21px;
+    }
+    :global(.app.mobile) .actions {
+      flex-wrap: wrap;
+      margin: 12px 0 16px;
+    }
+    :global(.app.mobile) .sheet {
+      padding: 22px 18px 20px;
+    }
+    :global(.app.mobile) .figures {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px 12px;
+    }
+    :global(.app.mobile) h1 {
+      font-size: 21px;
+    }
+    :global(.app.mobile) table {
+      font-size: 12px;
+    }
+    :global(.app.mobile) th:nth-child(6),
+    :global(.app.mobile) td:nth-child(6) {
+      display: none;
+    }
+    :global(.app.mobile) th,
+    :global(.app.mobile) td {
+      padding-left: 4px;
+      padding-right: 4px;
+    }
   }
-  :global(.app.mobile) h2 {
-    font-size: 21px;
-  }
-  :global(.app.mobile) .actions {
-    flex-wrap: wrap;
-    margin: 12px 0 16px;
-  }
-  :global(.app.mobile) .sheet {
-    padding: 22px 18px 20px;
-  }
-  :global(.app.mobile) .figures {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px 12px;
-  }
-  :global(.app.mobile) h1 {
-    font-size: 21px;
-  }
-  :global(.app.mobile) table {
-    font-size: 12px;
-  }
-  :global(.app.mobile) th:nth-child(6),
-  :global(.app.mobile) td:nth-child(6) {
-    display: none;
-  }
-  :global(.app.mobile) th,
-  :global(.app.mobile) td {
-    padding-left: 4px;
-    padding-right: 4px;
-  }
+
   @media print {
     .scroll {
       height: auto;

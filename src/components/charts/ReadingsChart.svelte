@@ -191,6 +191,16 @@
     display: block;
     overflow: visible;
   }
+  @media print {
+    .chart {
+      height: auto !important;
+    }
+    svg {
+      width: 100%;
+      height: auto;
+      max-height: 70mm;
+    }
+  }
   svg:focus-visible {
     outline: 2px solid var(--focus);
     outline-offset: 4px;

@@ -38,7 +38,8 @@ you own.
   earlier periods with the arrows, or pick any two dates. A readings chart with the target band,
   time in range by day or week, and a time-of-day view that shows when your levels tend to run high.
 - **A report for your doctor.** A printable sheet with the summary figures, chart, and a table of
-  every reading. Save it as a PDF, export a CSV, or copy a plain-text summary.
+  every reading. Save it as a PDF, export or share a CSV, or copy a plain-text summary, on the
+  computer or the phone.
 - **Your data stays yours.** Readings are stored as CSV in `~/.local/share/honeycomb/readings.csv`.
   Point the app at a different file if you prefer, or import an export on a new machine.
 - **Sync between devices, no account needed.** Pair two computers, or a computer and a phone, and
@@ -107,8 +108,9 @@ signed with the same key. The APK is written to `src-tauri/target/release/bundle
 Install it with `adb install` or copy it to the phone.
 
 On the phone, readings live in the app's private storage and are left out of Android's cloud
-backup and phone-to-phone transfer. Use sync, Copy CSV, or Copy summary to get them out, and pair
-a new phone rather than restoring onto it.
+backup and phone-to-phone transfer. The Report page can save a PDF through Android's print
+dialog and hand a CSV to any app through the share sheet; sync and Copy summary work too. Pair a
+new phone rather than restoring onto it.
 
 ## Syncing between devices
 

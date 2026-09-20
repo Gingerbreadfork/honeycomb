@@ -48,4 +48,9 @@
   button:active {
     background: var(--card-2);
   }
+  @media print {
+    .tabs {
+      display: none;
+    }
+  }
 </style>

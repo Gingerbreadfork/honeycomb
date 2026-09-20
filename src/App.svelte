@@ -234,6 +234,9 @@
       box-shadow: none;
       background: #fff;
     }
+    .app.mobile {
+      padding-top: 0;
+    }
     main {
       position: static;
     }
