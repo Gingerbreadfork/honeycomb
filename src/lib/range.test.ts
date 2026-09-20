@@ -38,6 +38,20 @@ describe('RangeState', () => {
     expect(v.canBack).toBe(false);
   });
 
+  it('custom ranges stay between the first reading and today', () => {
+    const r = new RangeState(30);
+    r.custom = true;
+    r.fromText = '0202-01-01';
+    r.toText = '2099-01-01';
+    const v = r.resolve(now, readings);
+    expect(v.from.getTime()).toBe(new Date(2026, 5, 1).getTime());
+    expect(v.to.getTime()).toBe(new Date(2026, 8, 16).getTime());
+    expect(v.canBack).toBe(false);
+    r.fromText = '2026-09-10';
+    r.toText = '2026-09-01';
+    expect(r.resolve(now, readings).spanDays).toBe(1);
+  });
+
   it('custom ranges shift by their own length', () => {
     const r = new RangeState(30);
     r.setCustom(new Date(2026, 7, 1), new Date(2026, 7, 10));

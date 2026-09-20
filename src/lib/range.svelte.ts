@@ -55,11 +55,16 @@ export class RangeState {
   resolve(now: Date, readings: Reading[]): Resolved {
     const today = startOfDay(now);
     if (this.custom) {
-      const from = fromInputs(this.fromText, '00:00') ?? addDays(today, -29);
-      const toDay = fromInputs(this.toText, '00:00') ?? today;
+      // Kept between the first reading and today: a half-typed year would otherwise span centuries.
+      const earliest = readings[0] ? startOfDay(readings[0].time) : addDays(today, -29);
+      let toDay = fromInputs(this.toText, '00:00') ?? today;
+      if (toDay > today) toDay = today;
+      let from = fromInputs(this.fromText, '00:00') ?? addDays(today, -29);
+      if (from < earliest) from = earliest;
+      if (from > toDay) from = toDay;
       const to = addDays(toDay, 1);
       const spanDays = Math.max(1, Math.round((to.getTime() - from.getTime()) / 864e5));
-      return { from, to, spanDays, canForward: toDay < today, canBack: true };
+      return { from, to, spanDays, canForward: toDay < today, canBack: from > earliest };
     }
     if (!this.days) {
       const first = readings[0];
