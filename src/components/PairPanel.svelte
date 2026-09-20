@@ -1,6 +1,6 @@
 <script lang="ts">
   import { app } from '../lib/store.svelte';
-  import { copyText } from '../lib/platform';
+  import { copyText, isMobile, scanQr } from '../lib/platform';
   import Icon from './Icon.svelte';
   import QrCode from './QrCode.svelte';
   import { pairingQrText } from '../lib/qr';
@@ -57,6 +57,19 @@
     }
   }
 
+  async function scan(): Promise<void> {
+    if (busy) return;
+    error = null;
+    try {
+      const text = await scanQr();
+      if (!text) return;
+      entered = text;
+      await pairEntered();
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+  }
+
   async function pairNearby(id: string, name: string): Promise<void> {
     if (busy) return;
     busy = `Waiting for ${name} to accept…`;
@@ -106,7 +119,14 @@
       <p class="muted">Preparing a code…</p>
     {/if}
   {:else}
-    <p class="hint">Paste the code shown on the other computer.</p>
+    {#if isMobile}
+      <p class="hint">Scan the square shown on the other device, or paste its code.</p>
+      <div class="row">
+        <button type="button" class="btn small primary" onclick={scan} disabled={busy !== null}><Icon name="devices" size={14} /> Scan the code</button>
+      </div>
+    {:else}
+      <p class="hint">Paste the code shown on the other computer.</p>
+    {/if}
     <textarea
       class="field entry"
       rows="3"
@@ -121,7 +141,7 @@
       }}
     ></textarea>
     <div class="row">
-      <button type="button" class="btn small primary" onclick={pairEntered} disabled={!entered.trim() || busy !== null}>
+      <button type="button" class="btn small" class:primary={!isMobile} onclick={pairEntered} disabled={!entered.trim() || busy !== null}>
         {busy ?? 'Pair'}
       </button>
     </div>

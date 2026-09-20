@@ -116,8 +116,8 @@ Open Settings, then Devices, and choose Pair a device.
 
 - **Same network.** Other computers running Honeycomb show up automatically. Tap Pair, confirm the
   four-digit code shown on both screens, done.
-- **Anywhere else.** Show a code on one device and enter it on the other. Codes work once and
-  expire after ten minutes.
+- **Anywhere else.** Show a code on one device and enter it on the other, or point the phone's
+  camera at the QR code beside it. Codes work once and expire after ten minutes.
 
 After pairing, sync is automatic: on startup, after every change, when the window regains focus,
 and every couple of minutes. Both devices need to be running for a sync to happen. On a desktop

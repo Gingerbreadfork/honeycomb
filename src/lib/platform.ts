@@ -99,6 +99,22 @@ export async function exportFile(path: string, text: string): Promise<void> {
   URL.revokeObjectURL(a.href);
 }
 
+/** Opens the phone's camera and resolves with the text of the first QR code it sees, or null if the user backs out. */
+export async function scanQr(): Promise<string | null> {
+  if (!isMobile) return null;
+  const scanner = await import('@tauri-apps/plugin-barcode-scanner');
+  let permission = await scanner.checkPermissions();
+  if (permission !== 'granted') permission = await scanner.requestPermissions();
+  if (permission !== 'granted') throw new Error('Honeycomb needs the camera to scan a code. You can allow it in the phone\'s app settings.');
+  try {
+    const found = await scanner.scan({ formats: [scanner.Format.QRCode] });
+    return found.content || null;
+  } catch (e) {
+    if (/cancel/i.test(String(e))) return null;
+    throw e;
+  }
+}
+
 export async function copyText(text: string): Promise<void> {
   if (isTauri) return clipWrite(text);
   await navigator.clipboard.writeText(text);

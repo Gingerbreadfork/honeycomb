@@ -283,6 +283,10 @@ pub fn run() {
         }
         builder = builder.plugin(tauri_plugin_window_state::Builder::new().build());
     }
+    #[cfg(mobile)]
+    {
+        builder = builder.plugin(tauri_plugin_barcode_scanner::init());
+    }
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
