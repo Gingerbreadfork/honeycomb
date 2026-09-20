@@ -44,7 +44,9 @@
   }
 
   function onInput(e: Event): void {
-    text = (e.currentTarget as HTMLInputElement).value.replace(/[^\d.,]/g, '').slice(0, 5);
+    const el = e.currentTarget as HTMLInputElement;
+    text = el.value.replace(/[^\d.,]/g, '').slice(0, 5);
+    el.value = text;
   }
 
   function onValueKey(e: KeyboardEvent): void {
