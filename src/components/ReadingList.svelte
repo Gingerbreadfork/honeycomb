@@ -87,7 +87,7 @@
   }
   .row {
     display: grid;
-    grid-template-columns: 78px 64px 108px 104px 1fr;
+    grid-template-columns: 78px 64px 108px 118px 1fr;
     align-items: center;
     gap: 10px;
     width: 100%;

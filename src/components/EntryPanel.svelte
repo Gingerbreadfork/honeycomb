@@ -1,8 +1,9 @@
 <script lang="ts">
   import { app } from '../lib/store.svelte';
-  import { CONTEXTS, formatValue, inputHint, parseInput, STATUS_LABEL, statusOf, toneOf, type Context } from '../lib/glucose';
+  import { formatValue, inputHint, parseInput, STATUS_LABEL, statusOf, toneOf, type Context } from '../lib/glucose';
   import { fmtDateTime } from '../lib/time';
   import TimePicker from './TimePicker.svelte';
+  import ContextPicker from './ContextPicker.svelte';
   import Icon from './Icon.svelte';
   import { isMobile } from '../lib/platform';
 
@@ -123,13 +124,7 @@
     <TimePicker value={time} pinned={pinnedTime !== null} onchange={(d) => (pinnedTime = d)} />
   </div>
 
-  <div class="chips" role="group" aria-label="Context">
-    {#each CONTEXTS as c (c.value)}
-      <button type="button" class="chip" aria-pressed={context === c.value} onclick={() => (context = context === c.value ? '' : c.value)}>
-        {c.label}
-      </button>
-    {/each}
-  </div>
+  <ContextPicker bind:value={context} />
 
   <textarea
     class="note"
@@ -251,30 +246,6 @@
     display: flex;
     align-items: center;
   }
-  .chips {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px;
-  }
-  .chip {
-    height: 30px;
-    padding: 0 12px;
-    border-radius: 999px;
-    background: var(--card-2);
-    color: var(--ink-2);
-    font-size: 13.5px;
-    font-weight: 500;
-    transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out);
-  }
-  .chip:hover {
-    background: var(--card-3);
-    color: var(--ink);
-  }
-  .chip[aria-pressed='true'] {
-    background: var(--accent-soft);
-    color: var(--ink);
-    box-shadow: inset 0 0 0 1px var(--accent);
-  }
   .note {
     width: 100%;
     border: 0;
@@ -386,10 +357,6 @@
   }
   :global(.app.mobile) .status {
     margin-top: 6px;
-  }
-  :global(.app.mobile) .chip {
-    height: 38px;
-    font-size: 14.5px;
   }
   :global(.app.mobile) .save {
     height: 46px;

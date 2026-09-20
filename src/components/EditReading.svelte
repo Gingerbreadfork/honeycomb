@@ -1,8 +1,9 @@
 <script lang="ts">
   import { app } from '../lib/store.svelte';
-  import { CONTEXTS, formatValue, inputHint, parseInput, STATUS_LABEL, statusOf, toneOf, type Context, type Reading } from '../lib/glucose';
+  import { formatValue, inputHint, parseInput, STATUS_LABEL, statusOf, toneOf, type Context, type Reading } from '../lib/glucose';
   import { dateInputValue, fromInputs, instantMs, isFuture, timeInputValue } from '../lib/time';
   import Dialog from './Dialog.svelte';
+  import ContextPicker from './ContextPicker.svelte';
   import Icon from './Icon.svelte';
 
   let { reading, onclose }: { reading: Reading; onclose: () => void } = $props();
@@ -79,13 +80,7 @@
 
     <div class="ctx">
       <span class="lbl">Context</span>
-      <div class="chips" role="group" aria-label="Context">
-        {#each CONTEXTS as c (c.value)}
-          <button type="button" class="chip" aria-pressed={context === c.value} onclick={() => (context = context === c.value ? '' : c.value)}>
-            {c.label}
-          </button>
-        {/each}
-      </div>
+      <ContextPicker bind:value={context} />
     </div>
 
     <label>
@@ -153,29 +148,6 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
-  }
-  .chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-  }
-  .chip {
-    height: 30px;
-    padding: 0 12px;
-    border-radius: 999px;
-    background: var(--card-2);
-    color: var(--ink-2);
-    font-size: 13.5px;
-    font-weight: 500;
-  }
-  .chip:hover {
-    background: var(--card-3);
-    color: var(--ink);
-  }
-  .chip[aria-pressed='true'] {
-    background: var(--accent-soft);
-    color: var(--ink);
-    box-shadow: inset 0 0 0 1px var(--accent);
   }
   .delete {
     color: var(--danger-text);

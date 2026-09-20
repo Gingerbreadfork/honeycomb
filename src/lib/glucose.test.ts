@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_TARGETS, formatValue, gmi, parseInput, statusOf, targetsProblem, toMmol } from './glucose';
+import { contextLabel, DEFAULT_TARGETS, formatValue, gmi, isContext, mealContext, mealOf, normalizeContext, parseInput, statusOf, targetsProblem, timingOf, toMmol } from './glucose';
 
 describe('glucose', () => {
   it('parses input in either unit and rejects junk', () => {
@@ -17,6 +17,28 @@ describe('glucose', () => {
     expect(targetsProblem(70, 300, 'mg/dL')).toMatch(/high target/);
     expect(targetsProblem(8, 8, 'mmol/L')).toMatch(/above the low/);
     expect(targetsProblem(NaN, 10, 'mmol/L')).toMatch(/numbers/);
+  });
+
+  it('reads contexts from other apps and old files', () => {
+    expect(normalizeContext('Pre-breakfast')).toBe('before breakfast');
+    expect(normalizeContext('post lunch')).toBe('after lunch');
+    expect(normalizeContext('After supper')).toBe('after dinner');
+    expect(normalizeContext('before_meal')).toBe('before meal');
+    expect(normalizeContext('Workout')).toBe('exercise');
+    expect(normalizeContext('sick day')).toBe('unwell');
+    expect(normalizeContext('Fasted')).toBe('fasting');
+    expect(normalizeContext('random tag')).toBe('');
+  });
+
+  it('splits a meal context into its timing and meal', () => {
+    expect(timingOf('after dinner')).toBe('after');
+    expect(mealOf('after dinner')).toBe('dinner');
+    expect(mealOf('before meal')).toBeNull();
+    expect(timingOf('bedtime')).toBeNull();
+    expect(mealContext('before', 'snack')).toBe('before snack');
+    expect(mealContext('after', null)).toBe('after meal');
+    expect(contextLabel('before breakfast')).toBe('Before breakfast');
+    expect(isContext('before dessert')).toBe(false);
   });
 
   it('classifies against the target range', () => {

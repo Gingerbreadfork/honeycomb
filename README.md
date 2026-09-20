@@ -30,7 +30,7 @@ you own.
 - **Fast logging.** Open the app and the reading field already has focus. Type a number and press
   Enter. The time is prefilled and keeps ticking until you change it, with quick presets like
   "30 min ago" for the reading you forgot to log. Optional context (fasting, before or after a
-  meal, bedtime) and a note.
+  meal and which meal, bedtime, exercise, feeling unwell) and a note.
 - **Honest feedback.** As you type, the app tells you whether the reading is in range, high, low,
   or very high, in words, not just colours. Nothing shouts.
 - **Trends.** Average, time in range, estimated A1c, lowest and highest, variability, and fasting

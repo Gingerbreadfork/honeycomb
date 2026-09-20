@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { isTauri } from './platform';
-import type { Reading, Unit } from './glucose';
+import { normalizeContext, type Reading, type Unit } from './glucose';
 import { parseStamp, toLocalIso } from './time';
 
 export interface DeviceInfo {
@@ -71,7 +71,7 @@ function fromRow(row: Row): Reading | null {
     offset: stamp.offset,
     mmol: row.mmol,
     unit: (row.unit === 'mg/dL' ? 'mg/dL' : 'mmol/L') as Unit,
-    context: (['fasting', 'before meal', 'after meal', 'bedtime'].includes(row.context) ? row.context : '') as Reading['context'],
+    context: normalizeContext(row.context ?? ''),
     note: row.note ?? '',
     updated: row.updated,
     deleted: row.deleted ?? null,
