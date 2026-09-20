@@ -1,4 +1,4 @@
-import { parseReadings, readingsFromCsv, readingsToCsv, newId } from './csv';
+import { parseReadings, readingsToCsv, newId } from './csv';
 import { DEFAULT_TARGETS, type Context, type Reading, type Targets, type Unit } from './glucose';
 import { appPaths, fileMtime, quitApp, readText, setBackgroundMode, writeText, win, isTauri, type AppPaths } from './platform';
 import { SyncState } from './sync.svelte';
@@ -258,8 +258,8 @@ class Store {
   }
 
   previewImport(name: string, text: string): void {
-    const rows = readingsFromCsv(text, this.settings.unit);
-    this.importing = { name, plan: planImport(this.rows, rows) };
+    const { readings, skipped } = parseReadings(text, this.settings.unit);
+    this.importing = { name, plan: planImport(this.rows, readings, skipped) };
   }
 
   confirmImport(): void {

@@ -22,6 +22,19 @@ describe('planImport', () => {
     expect(plan.existing).toBe(3);
   });
 
+  it('matches across a minute boundary and within the file itself', () => {
+    const at = (id: string, ms: number): Reading => ({ ...r(id, 0, 6.4), time: new Date(Date.UTC(2026, 8, 15, 8, 0, 0) + ms) });
+    const plan = planImport([at('a', 59_500)], [at('b', 60_200), at('c', 300_000), at('d', 300_400)]);
+    expect(plan.add.map((x) => x.id)).toEqual(['c']);
+  });
+
+  it('plans a large file quickly', () => {
+    const many = Array.from({ length: 60_000 }, (_, i) => r(`n${i}`, i * 5, 6 + (i % 40) / 10));
+    const t0 = performance.now();
+    expect(planImport(many.slice(0, 30_000), many).add).toHaveLength(30_000);
+    expect(performance.now() - t0).toBeLessThan(2000);
+  });
+
   it('keeps tombstones from a full export so deletions carry over', () => {
     const plan = planImport([], [r('gone', 0, 6.0, 5)]);
     expect(plan.add).toHaveLength(1);

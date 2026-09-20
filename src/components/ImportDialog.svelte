@@ -8,19 +8,28 @@
   const fresh = $derived(job ? job.plan.add.filter((r) => !r.deleted) : []);
   const span = $derived.by(() => {
     if (!fresh.length) return '';
-    const times = fresh.map((r) => r.time.getTime());
-    const a = new Date(Math.min(...times));
-    const b = new Date(Math.max(...times));
+    let first = Infinity;
+    let last = -Infinity;
+    for (const r of fresh) {
+      first = Math.min(first, r.time.getTime());
+      last = Math.max(last, r.time.getTime());
+    }
+    const a = new Date(first);
+    const b = new Date(last);
     return a.toDateString() === b.toDateString() ? fmtShortDate(a) : `${fmtShortDate(a)} to ${fmtShortDate(b)}`;
   });
   const unit = $derived(app.settings.unit);
+  const skipped = $derived(job?.plan.skipped ?? 0);
 </script>
 
 {#if job}
   <Dialog title="Import readings" width={440} onclose={() => (app.importing = null)}>
     <p class="file">{job.name}</p>
     {#if job.plan.total === 0}
-      <p class="text">No readings were found in this file. Honeycomb expects a CSV with a time column and a glucose column.</p>
+      <p class="text">
+        No readings were found in this file. Honeycomb expects a CSV with a time column and a glucose column.
+        {#if skipped}It has {skipped} line{skipped === 1 ? '' : 's'}, but none had a time and a value that could be read.{/if}
+      </p>
     {:else if fresh.length === 0}
       <p class="text">
         Everything in this file is already here. {job.plan.total} reading{job.plan.total === 1 ? '' : 's'} checked, nothing new.
@@ -36,6 +45,9 @@
         {/each}
         {#if fresh.length > 4}<li class="more">and {fresh.length - 4} more</li>{/if}
       </ul>
+    {/if}
+    {#if skipped && job.plan.total > 0}
+      <p class="text skipped">{skipped} line{skipped === 1 ? '' : 's'} could not be read and will be left out.</p>
     {/if}
     {#snippet footer()}
       {#if fresh.length}
@@ -61,6 +73,9 @@
   }
   .text strong {
     color: var(--ink);
+  }
+  .skipped {
+    margin-top: 12px;
   }
   .sample {
     list-style: none;
