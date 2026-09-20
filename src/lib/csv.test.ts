@@ -49,7 +49,8 @@ describe('csv', () => {
     const a = readingsFromCsv(legacy, 'mmol/L');
     const b = readingsFromCsv(legacy, 'mmol/L');
     expect(a[0].id).toBe(b[0].id);
-    expect(a[0].updated).toBe(a[0].time.getTime());
+    expect(a[0].updated).toBe(Date.parse('2026-09-01T07:30:00+10:00'));
+    expect(a[0].time.getHours()).toBe(7);
     const clean = readingsToCleanCsv([{ ...a[0], deleted: 5 }, { ...a[0], id: 'x', deleted: null }]);
     expect(clean.split('\n').filter(Boolean)).toHaveLength(2);
     expect(clean.startsWith('time,glucose,unit,context,note\n')).toBe(true);
