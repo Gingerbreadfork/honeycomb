@@ -21,7 +21,10 @@ struct AppPaths {
     settings_file: String,
 }
 
-struct SyncHandle(Mutex<Option<Shared>>);
+struct SyncHandle {
+    engine: Mutex<Option<Shared>>,
+    starting: tokio::sync::Mutex<()>,
+}
 struct BackgroundMode(AtomicBool);
 
 fn mtime_of(path: &Path) -> Option<u64> {
@@ -119,27 +122,24 @@ fn quit_app(app: tauri::AppHandle) {
 }
 
 fn engine(state: &State<'_, SyncHandle>) -> Result<Shared, String> {
-    state.0.lock().unwrap().clone().ok_or_else(|| "Sync is still starting".to_string())
+    state.engine.lock().unwrap().clone().ok_or_else(|| "Sync is still starting".to_string())
 }
 
 #[tauri::command]
 fn sync_snapshot(state: State<'_, SyncHandle>) -> Option<SyncSnapshot> {
-    state.0.lock().unwrap().as_ref().map(|e| e.snapshot())
+    state.engine.lock().unwrap().as_ref().map(|e| e.snapshot())
 }
 
 /// Starts the sync engine once the page is up, so the platform runtime is fully initialised first.
 #[tauri::command]
 async fn sync_start(app: tauri::AppHandle, state: State<'_, SyncHandle>) -> Result<SyncSnapshot, String> {
-    if let Some(e) = state.0.lock().unwrap().as_ref() {
+    let _starting = state.starting.lock().await;
+    if let Some(e) = state.engine.lock().unwrap().as_ref() {
         return Ok(e.snapshot());
     }
     let dir = app.path().data_dir().map(|d| d.join(profile_dir_name())).unwrap_or_else(|_| PathBuf::from("."));
     let engine = SyncEngine::start(app.clone(), dir).await?;
-    let mut slot = state.0.lock().unwrap();
-    if let Some(existing) = slot.as_ref() {
-        return Ok(existing.snapshot());
-    }
-    slot.replace(engine.clone());
+    state.engine.lock().unwrap().replace(engine.clone());
     Ok(engine.snapshot())
 }
 
@@ -248,7 +248,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
-        .manage(SyncHandle(Mutex::new(None)))
+        .manage(SyncHandle { engine: Mutex::new(None), starting: tokio::sync::Mutex::new(()) })
         .manage(BackgroundMode(AtomicBool::new(false)))
         .setup(|_app| Ok(()))
         .on_window_event(|window, event| {
