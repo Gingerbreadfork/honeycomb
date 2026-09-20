@@ -12,7 +12,43 @@ export function toLocalIso(d: Date, withMs = false): string {
   );
 }
 
-export function parseTime(raw: string): Date | null {
+export type DayOrder = 'dmy' | 'mdy';
+
+const NUMERIC_DATE = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})(?:[ ,T]+(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*([ap])\.?m\.?)?)?$/i;
+
+/** Null when any part is out of range, rather than rolling over into another month or year. */
+function localDate(y: number, mo: number, d: number, h = 12, mi = 0, sec = 0, ms = 0): Date | null {
+  if (h > 23 || mi > 59 || sec > 59) return null;
+  const date = new Date(y, mo - 1, d, h, mi, sec, ms);
+  return date.getFullYear() === y && date.getMonth() === mo - 1 && date.getDate() === d ? date : null;
+}
+
+/** Works out whether dates like 03/04/2026 put the day or the month first. Null when no value settles it. */
+export function detectDayOrder(samples: string[]): DayOrder | null {
+  let dayFirst = false;
+  let monthFirst = false;
+  for (const text of samples) {
+    const m = text.trim().match(NUMERIC_DATE);
+    if (!m) continue;
+    if (+m[1] > 12) dayFirst = true;
+    if (+m[2] > 12) monthFirst = true;
+  }
+  if (dayFirst === monthFirst) return null;
+  return dayFirst ? 'dmy' : 'mdy';
+}
+
+export function localeDayOrder(): DayOrder {
+  try {
+    const parts = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'numeric' }).formatToParts(new Date(2026, 0, 2));
+    const month = parts.findIndex((p) => p.type === 'month');
+    const day = parts.findIndex((p) => p.type === 'day');
+    return month >= 0 && month < day ? 'mdy' : 'dmy';
+  } catch {
+    return 'dmy';
+  }
+}
+
+export function parseTime(raw: string, order: DayOrder = 'dmy'): Date | null {
   const s = raw.trim();
   if (!s) return null;
   let m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(Z|[+-]\d{2}:?\d{2})?$/);
@@ -21,19 +57,21 @@ export function parseTime(raw: string): Date | null {
       const d = new Date(s.replace(' ', 'T').replace(/([+-]\d{2})(\d{2})$/, '$1:$2'));
       return isNaN(d.getTime()) ? null : d;
     }
-    return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], m[6] ? +m[6] : 0, m[7] ? +m[7].padEnd(3, '0') : 0);
+    return localDate(+m[1], +m[2], +m[3], +m[4], +m[5], m[6] ? +m[6] : 0, m[7] ? +m[7].padEnd(3, '0') : 0);
   }
   m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (m) return new Date(+m[1], +m[2] - 1, +m[3], 12, 0, 0);
-  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ ,]+(\d{1,2}):(\d{2})\s*([ap]m)?)?$/i);
+  if (m) return localDate(+m[1], +m[2], +m[3]);
+  m = s.match(NUMERIC_DATE);
   if (m) {
+    const [day, month] = order === 'dmy' ? [+m[1], +m[2]] : [+m[2], +m[1]];
     let h = m[4] ? +m[4] : 12;
-    if (m[6]) {
-      const pm = m[6].toLowerCase() === 'pm';
+    if (m[7]) {
+      if (h < 1 || h > 12) return null;
+      const pm = m[7].toLowerCase() === 'p';
       if (pm && h < 12) h += 12;
       if (!pm && h === 12) h = 0;
     }
-    return new Date(+m[3], +m[2] - 1, +m[1], h, m[5] ? +m[5] : 0);
+    return localDate(+m[3], month, day, h, m[5] ? +m[5] : 0, m[6] ? +m[6] : 0);
   }
   const d = new Date(s);
   return isNaN(d.getTime()) ? null : d;

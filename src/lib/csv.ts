@@ -1,5 +1,5 @@
 import { normalizeContext, type Reading, type Unit } from './glucose';
-import { parseTime, toLocalIso } from './time';
+import { detectDayOrder, localeDayOrder, parseTime, toLocalIso } from './time';
 
 export function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
@@ -132,11 +132,12 @@ export function parseReadings(text: string, fallbackUnit: Unit): { readings: Rea
   }
   if (timeCol < 0 || glucoseCol < 0) return { readings: [], skipped: rows.length - 1 };
   const headerUnit = unitFrom(headers[glucoseCol]);
+  const dayOrder = detectDayOrder(rows.slice(1).map((r) => r[timeCol] ?? '')) ?? localeDayOrder();
 
   const out: Reading[] = [];
   for (const r of rows.slice(1)) {
     const timeText = clockCol >= 0 ? `${r[timeCol] ?? ''} ${r[clockCol] ?? ''}` : (r[timeCol] ?? '');
-    const time = parseTime(timeText);
+    const time = parseTime(timeText, dayOrder);
     const value = Number((r[glucoseCol] ?? '').trim().replace(',', '.'));
     if (!time || !Number.isFinite(value) || value <= 0) continue;
     const unit: Unit =
