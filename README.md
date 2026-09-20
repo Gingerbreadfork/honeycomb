@@ -103,8 +103,9 @@ This needs the Android SDK, an NDK, and a JDK 17 or 21. Set `ANDROID_HOME`, `NDK
 signed with the same key. The APK is written to `src-tauri/target/release/bundle/android/`.
 Install it with `adb install` or copy it to the phone.
 
-On the phone, readings live in the app's private storage. Use sync, Copy CSV, or Copy summary to
-get them out.
+On the phone, readings live in the app's private storage and are left out of Android's cloud
+backup and phone-to-phone transfer. Use sync, Copy CSV, or Copy summary to get them out, and pair
+a new phone rather than restoring onto it.
 
 ## Syncing between devices
 
