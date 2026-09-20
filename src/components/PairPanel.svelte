@@ -15,7 +15,8 @@
 
   const snap = $derived(app.sync.snapshot);
   const nearby = $derived(snap?.nearby.filter((n) => !n.paired) ?? []);
-  const remaining = $derived(Math.max(0, Math.round((expires - app.now.getTime()) / 60000)));
+  const remaining = $derived(Math.max(1, Math.ceil((expires - app.now.getTime()) / 60000)));
+  const expired = $derived(code !== '' && expires <= app.now.getTime());
 
   async function showCode(): Promise<void> {
     error = null;
@@ -85,7 +86,12 @@
 
   {#if mode === 'show'}
     <p class="hint">On the other computer, open Settings, choose Pair a device, then Enter a code.</p>
-    {#if code}
+    {#if expired}
+      <div class="row">
+        <span class="muted">That code has expired.</span>
+        <button type="button" class="btn small" onclick={showCode}>Show a new code</button>
+      </div>
+    {:else if code}
       <div class="code" aria-label="Pairing code">{code}</div>
       <div class="row">
         <button type="button" class="btn small" onclick={copy}><Icon name="copy" size={14} /> {copied ? 'Copied' : 'Copy code'}</button>

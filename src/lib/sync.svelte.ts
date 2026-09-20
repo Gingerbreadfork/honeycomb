@@ -116,6 +116,9 @@ export class SyncState {
     await listen<{ from: string; changed: number }>('sync:pulled', (e) => this.onPulled?.(e.payload.from, e.payload.changed));
     await listen<DeviceInfo>('sync:paired', (e) => this.onPaired?.(e.payload));
     await listen<PairRequest>('sync:pair-request', (e) => (this.pairRequest = e.payload));
+    await listen<number>('sync:pair-request-ended', (e) => {
+      if (this.pairRequest?.request_id === e.payload) this.pairRequest = null;
+    });
     await listen<string>('sync:pair-waiting', (e) => (this.waitingCode = e.payload));
     try {
       this.snapshot = await invoke<SyncSnapshot>('sync_start');

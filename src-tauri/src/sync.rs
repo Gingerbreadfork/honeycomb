@@ -694,9 +694,13 @@ impl SyncEngine {
                         let _ = w.show();
                         let _ = w.set_focus();
                     }
-                    let outcome = tokio::time::timeout(Duration::from_secs(80), rx).await;
+                    let accepted = tokio::select! {
+                        answer = tokio::time::timeout(Duration::from_secs(80), rx) => answer.ok().and_then(|r| r.ok()).unwrap_or(false),
+                        _ = conn.closed() => false,
+                    };
                     self.inner.lock().unwrap().pending.remove(&req.request_id);
-                    outcome.ok().and_then(|r| r.ok()).unwrap_or(false)
+                    let _ = self.app.emit("sync:pair-request-ended", req.request_id);
+                    accepted
                 }
             };
             if !accepted {
@@ -705,10 +709,10 @@ impl SyncEngine {
                 return Ok(());
             }
             let addr = if their_addr.id == remote { their_addr } else { EndpointAddr::new(remote) };
+            reply(&mut send, &Message::PairOk { device: self.device(), addr: self.my_addr() }).await?;
             self.add_peer(&device, addr);
             self.inner.lock().unwrap().pairing = None;
             self.save();
-            let _ = reply(&mut send, &Message::PairOk { device: self.device(), addr: self.my_addr() }).await;
             let _ = self.app.emit("sync:paired", device);
             self.emit_state();
             wait_closed(&conn).await;
