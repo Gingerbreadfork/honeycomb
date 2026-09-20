@@ -74,6 +74,11 @@ function findCol(headers: string[], names: string[]): number {
   return -1;
 }
 
+/** For columns whose name must match outright: "id" should not pick up "Device ID". */
+function exactCol(headers: string[], names: string[]): number {
+  return names.map((n) => headers.indexOf(n)).find((i) => i >= 0) ?? -1;
+}
+
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 
 export function newId(): string {
@@ -114,14 +119,14 @@ export function parseReadings(text: string, fallbackUnit: Unit): { readings: Rea
   if (!rows.length) return { readings: [], skipped: 0 };
   const headers = rows[0].map((h) => h.trim().toLowerCase());
   let timeCol = findCol(headers, COLS.time);
-  const dateCol = COLS.date.map((n) => headers.indexOf(n)).find((i) => i >= 0) ?? -1;
+  const dateCol = exactCol(headers, COLS.date);
   const glucoseCol = findCol(headers, COLS.glucose);
   const unitCol = findCol(headers, COLS.unit);
   const contextCol = findCol(headers, COLS.context);
   const noteCol = findCol(headers, COLS.note);
-  const idCol = findCol(headers, COLS.id);
-  const updatedCol = findCol(headers, COLS.updated);
-  const deletedCol = findCol(headers, COLS.deleted);
+  const idCol = exactCol(headers, COLS.id);
+  const updatedCol = exactCol(headers, COLS.updated);
+  const deletedCol = exactCol(headers, COLS.deleted);
   let clockCol = -1;
   if (timeCol < 0 && dateCol >= 0) {
     timeCol = dateCol;

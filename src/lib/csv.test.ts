@@ -37,6 +37,13 @@ describe('csv', () => {
     expect(new Date(readingsFromCsv(old, 'mmol/L')[0].updated).getSeconds()).toBe(31);
   });
 
+  it('does not take a column that merely contains "id" as the row id', () => {
+    const meter = 'Timestamp,Glucose Value (mg/dL),Source Device ID\n2026-09-01T08:00:00,100,PHONE1\n2026-09-01T12:00:00,140,PHONE1\n';
+    const ids = readingsFromCsv(meter, 'mg/dL').map((r) => r.id);
+    expect(new Set(ids).size).toBe(2);
+    expect(ids).not.toContain('PHONE1');
+  });
+
   it('gives legacy rows a stable id and hides tombstones from the clean export', () => {
     const legacy = 'time,glucose,unit,context,note\n2026-09-01T07:30:00+10:00,6.1,mmol/L,fasting,\n';
     const a = readingsFromCsv(legacy, 'mmol/L');
