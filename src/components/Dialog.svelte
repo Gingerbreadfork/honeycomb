@@ -18,14 +18,37 @@
     footer,
   }: { title: string; width?: number; onclose: () => void; children: Snippet; footer?: Snippet } = $props();
 
+  const FOCUSABLE =
+    'a[href], button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+  let dialog: HTMLElement | undefined;
+
   function onkeydown(e: KeyboardEvent): void {
-    if (e.key === 'Escape' && stack[stack.length - 1] === me) {
+    if (stack[stack.length - 1] !== me) return;
+    if (e.key === 'Escape') {
       e.stopPropagation();
       onclose();
+    } else if (e.key === 'Tab' && dialog) {
+      keepFocusInside(e, dialog);
     }
   }
 
+  /** Tab wraps from the last control to the first, and back, so focus never reaches the page behind. */
+  function keepFocusInside(e: KeyboardEvent, node: HTMLElement): void {
+    const items = [...node.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => el.getClientRects().length > 0);
+    const active = document.activeElement;
+    const first = items[0] ?? node;
+    const last = items[items.length - 1] ?? node;
+    if (!node.contains(active)) first.focus();
+    else if (e.shiftKey && (active === first || active === node)) last.focus();
+    else if (!e.shiftKey && active === last) first.focus();
+    else return;
+    e.preventDefault();
+  }
+
   function focusFirst(node: HTMLElement): () => void {
+    dialog = node;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     stack.push(me);
     const body = node.querySelector<HTMLElement>('.body, footer') ?? node;
     const el = isMobile
@@ -37,6 +60,8 @@
     return () => {
       const i = stack.indexOf(me);
       if (i >= 0) stack.splice(i, 1);
+      const typing = opener instanceof HTMLInputElement || opener instanceof HTMLTextAreaElement;
+      if (opener?.isConnected && !(isMobile && typing)) opener.focus({ preventScroll: true });
     };
   }
 </script>
