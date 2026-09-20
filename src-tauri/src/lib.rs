@@ -69,7 +69,21 @@ fn read_text(path: String) -> Result<Option<String>, String> {
     }
 }
 
-/// Writes to a sibling temp file, then renames over the target. Returns the new mtime.
+/// A new file is readable only by the user; readings are health data.
+pub(crate) fn write_new_private(path: &Path, text: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(path)?.write_all(text.as_bytes())
+}
+
+/// Writes to a sibling temp file, then renames over the target. A file that already exists keeps
+/// its permissions. Returns the new mtime.
 #[tauri::command]
 fn write_text(path: String, text: String) -> Result<Option<u64>, String> {
     let path = PathBuf::from(path);
@@ -81,7 +95,10 @@ fn write_text(path: String, text: String) -> Result<Option<u64>, String> {
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "file".into());
     let tmp = path.with_file_name(format!(".{name}.tmp"));
-    std::fs::write(&tmp, text.as_bytes()).map_err(|e| e.to_string())?;
+    write_new_private(&tmp, &text).map_err(|e| e.to_string())?;
+    if let Ok(existing) = std::fs::metadata(&path) {
+        let _ = std::fs::set_permissions(&tmp, existing.permissions());
+    }
     std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
     Ok(mtime_of(&path))
 }

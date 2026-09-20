@@ -1,6 +1,6 @@
 use std::{
     collections::{BTreeMap, HashMap},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -176,6 +176,13 @@ pub struct SyncEngine {
 
 pub type Shared = Arc<SyncEngine>;
 
+/// Writes through a temp file readable only by the user, then renames it into place.
+fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
+    let tmp = path.with_extension("tmp");
+    crate::write_new_private(&tmp, text)?;
+    std::fs::rename(&tmp, path)
+}
+
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
@@ -329,25 +336,25 @@ impl SyncEngine {
         let key_path = dir.join("device.key");
         let secret = match std::fs::read_to_string(&key_path) {
             Ok(hex) => {
-                let bytes = data_encoding::HEXLOWER.decode(hex.trim().as_bytes()).map_err(|e| e.to_string())?;
-                let arr: [u8; 32] = bytes.try_into().map_err(|_| "bad device key".to_string())?;
+                let bytes = data_encoding::HEXLOWER.decode(hex.trim().as_bytes()).map_err(|_| "The device key file is damaged".to_string())?;
+                let arr: [u8; 32] = bytes.try_into().map_err(|_| "The device key file is damaged".to_string())?;
                 SecretKey::from_bytes(&arr)
             }
-            Err(_) => {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 let sk = SecretKey::generate();
-                std::fs::write(&key_path, data_encoding::HEXLOWER.encode(&sk.to_bytes())).map_err(|e| e.to_string())?;
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let _ = std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o600));
-                }
+                write_private(&key_path, &data_encoding::HEXLOWER.encode(&sk.to_bytes())).map_err(|e| e.to_string())?;
                 sk
             }
+            Err(e) => return Err(format!("Couldn't read the device key: {e}")),
         };
-        let file: DevicesFile = std::fs::read_to_string(dir.join("devices.json"))
-            .ok()
-            .and_then(|t| serde_json::from_str(&t).ok())
-            .unwrap_or_default();
+        let devices_path = dir.join("devices.json");
+        let file: DevicesFile = match std::fs::read_to_string(&devices_path) {
+            Ok(text) => serde_json::from_str(&text).unwrap_or_else(|_| {
+                let _ = std::fs::rename(&devices_path, dir.join("devices.json.bad"));
+                DevicesFile::default()
+            }),
+            Err(_) => DevicesFile::default(),
+        };
         let device_name = file
             .device_name
             .as_deref()
@@ -457,7 +464,7 @@ impl SyncEngine {
         };
         let file = DevicesFile { device_name: Some(device_name), peers };
         if let Ok(text) = serde_json::to_string_pretty(&file) {
-            let _ = std::fs::write(self.dir.join("devices.json"), text);
+            let _ = write_private(&self.dir.join("devices.json"), &text);
         }
     }
 
