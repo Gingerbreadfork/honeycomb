@@ -72,6 +72,9 @@ adb install Honeycomb-<version>-arm64.apk             # Android, or copy the fil
 The Android package is signed with the project's own key, so the phone will ask you to allow
 installing from this source.
 
+Settings, About has a Check for updates button. It asks GitHub for the latest version number and
+nothing else. Checking at startup is off until you turn it on.
+
 ### From source
 
 You need Node 20 or newer, [pnpm](https://pnpm.io), a Rust toolchain, and the WebKitGTK

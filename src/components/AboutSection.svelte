@@ -5,8 +5,23 @@
   const repo = 'https://github.com/Gingerbreadfork/honeycomb';
   const version = __APP_VERSION__;
 
+  let checking = $state(false);
+  let checked = $state<string | null>(null);
+
   function go(url: string): void {
     openLink(url).catch((e) => app.toast(`Couldn't open the link: ${String(e)}`));
+  }
+
+  async function check(): Promise<void> {
+    checking = true;
+    checked = null;
+    try {
+      checked = (await app.checkForUpdate()) ? null : "You're on the latest version.";
+    } catch (e) {
+      checked = `Couldn't check: ${e instanceof Error ? e.message : String(e)}`;
+    } finally {
+      checking = false;
+    }
   }
 </script>
 
@@ -25,6 +40,24 @@
     <button type="button" class="btn small" onclick={() => go(repo)}>Source on GitHub</button>
     <button type="button" class="btn small" onclick={() => go(`${repo}/releases`)}>Releases</button>
     <button type="button" class="btn small ghost" onclick={() => go(`${repo}/issues`)}>Report a problem</button>
+  </div>
+  <div class="updates">
+    <div class="links">
+      <button type="button" class="btn small" onclick={check} disabled={checking}>{checking ? 'Checking…' : 'Check for updates'}</button>
+      {#if app.newRelease}
+        {@const found = app.newRelease}
+        <button type="button" class="btn small primary" onclick={() => go(found.url)}>Get {found.version}</button>
+      {:else if checked}
+        <span class="fine" role="status">{checked}</span>
+      {/if}
+    </div>
+    <label class="toggle">
+      <input type="checkbox" checked={app.settings.checkUpdates} onchange={(e) => app.updateSettings({ checkUpdates: e.currentTarget.checked })} />
+      <span>
+        Check when Honeycomb starts
+        <small>Asks GitHub for the latest version number. Nothing about you or your readings is sent.</small>
+      </span>
+    </label>
   </div>
   <p class="fine">
     Estimated A1c is calculated from your readings and is not a laboratory result. Talk to your care team about your targets.
@@ -64,6 +97,31 @@
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
+  }
+  .links {
+    align-items: center;
+  }
+  .updates {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .toggle {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .toggle input {
+    margin-top: 3px;
+    accent-color: var(--accent);
+  }
+  .toggle small {
+    display: block;
+    color: var(--ink-3);
+    font-size: 12px;
+    margin-top: 2px;
   }
   .fine {
     font-size: 12px;

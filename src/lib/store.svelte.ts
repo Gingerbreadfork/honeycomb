@@ -7,6 +7,8 @@ import { mergeSynced } from './merge';
 import { dedupeIds, dropExpiredTombstones, reconcileExternal } from './reconcile';
 import { pickCsvText } from './platform';
 import { dayKey, setHour12, systemHour12 } from './time';
+import { isNewer, latestRelease, type Release } from './update';
+import { openLink } from './platform';
 
 export type Page = 'log' | 'trends' | 'report';
 export type Theme = 'system' | 'light' | 'dark';
@@ -20,6 +22,7 @@ export interface Settings {
   theme: Theme;
   clock: Clock;
   background: boolean;
+  checkUpdates: boolean;
 }
 
 export interface Toast {
@@ -45,6 +48,7 @@ const DEFAULTS: Settings = {
   theme: 'system',
   clock: 'system',
   background: false,
+  checkUpdates: false,
 };
 
 /** A stamp newer than the row's current one, even when this device's clock runs behind. */
@@ -89,6 +93,8 @@ class Store {
   maximized = $state(false);
   now = $state(new Date());
   lastSaved = $state<Reading | null>(null);
+  /** A release newer than this build, once a check has found one. */
+  newRelease = $state<Release | null>(null);
 
   paths = $state<AppPaths | null>(null);
   dataPath = $derived(this.settings.dataFile ?? this.paths?.data_file ?? '');
@@ -124,6 +130,21 @@ class Store {
     this.sync.onPaired = (device) => this.toast(`Paired with ${device.name}`);
     await this.sync.init();
     this.sync.push(this.rows);
+    if (this.settings.checkUpdates) void this.checkForUpdate().catch(() => {});
+  }
+
+  /** Returns true when a newer release exists. Announces it with a toast the first time. */
+  async checkForUpdate(): Promise<boolean> {
+    const latest = await latestRelease();
+    if (!isNewer(latest.version, __APP_VERSION__)) {
+      this.newRelease = null;
+      return false;
+    }
+    if (this.newRelease?.version !== latest.version) {
+      this.toast(`Honeycomb ${latest.version} is out`, { label: 'See it', run: () => void openLink(latest.url) });
+    }
+    this.newRelease = latest;
+    return true;
   }
 
   /** Folds the sync engine's rows into local rows and writes the result to disk. */
