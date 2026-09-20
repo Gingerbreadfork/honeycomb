@@ -26,6 +26,7 @@ iroh = "1.2.0"
 iroh-mdns-address-lookup = "0.5.0"
 postcard = "1"
 data-encoding = "2.11.1"
+blake3 = "1"
 gethostname = "1"
 getrandom = "0.3"
 tokio = { version = "1.53.1", features = ["time", "sync", "io-util", "macros"] }

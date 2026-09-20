@@ -19,7 +19,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::{oneshot, Notify};
 
 const ALPN_SYNC: &[u8] = b"honeycomb/sync/1";
-const ALPN_PAIR: &[u8] = b"honeycomb/pair/1";
+const ALPN_PAIR: &[u8] = b"honeycomb/pair/2";
 const MAX_MESSAGE: usize = 64 * 1024 * 1024;
 const MAX_PAIR_MESSAGE: usize = 64 * 1024;
 const IO_TIMEOUT: Duration = Duration::from_secs(60);
@@ -106,7 +106,10 @@ impl PairCode {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 enum Message {
-    Pair { device: DeviceInfo, addr: EndpointAddr, secret: Option<[u8; 4]> },
+    /// `secret` comes from a typed or scanned code. Without one, `commit` starts the on-screen code exchange.
+    Pair { device: DeviceInfo, addr: EndpointAddr, secret: Option<[u8; 4]>, commit: Option<[u8; 32]> },
+    PairChallenge { nonce: [u8; 16] },
+    PairReveal { nonce: [u8; 16] },
     PairOk { device: DeviceInfo, addr: EndpointAddr },
     PairRejected { reason: String },
     Sync { device: DeviceInfo, addr: EndpointAddr, rows: Vec<Row> },
@@ -275,14 +278,23 @@ fn default_device_name() -> String {
     }
 }
 
-fn confirm_code(a: &EndpointId, b: &EndpointId) -> String {
-    let (x, y) = if a.as_bytes() < b.as_bytes() { (a, b) } else { (b, a) };
-    let mut h: u32 = 2166136261;
-    for byte in x.as_bytes().iter().chain(y.as_bytes().iter()) {
-        h ^= *byte as u32;
-        h = h.wrapping_mul(16777619);
-    }
-    format!("{:04}", h % 10000)
+fn commitment(nonce: &[u8; 16]) -> [u8; 32] {
+    *blake3::hash(nonce).as_bytes()
+}
+
+/// The six digits both screens show. The starting device commits to its nonce before it sees the
+/// other one, so neither side, nor anyone relaying between them, can steer the result.
+fn pairing_code(starter: &EndpointId, answerer: &EndpointId, starter_nonce: &[u8; 16], answerer_nonce: &[u8; 16]) -> String {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"honeycomb pairing code");
+    hasher.update(starter.as_bytes());
+    hasher.update(answerer.as_bytes());
+    hasher.update(starter_nonce);
+    hasher.update(answerer_nonce);
+    let digest = hasher.finalize();
+    let mut first = [0u8; 8];
+    first.copy_from_slice(&digest.as_bytes()[..8]);
+    format!("{:06}", u64::from_le_bytes(first) % 1_000_000)
 }
 
 fn encode_code(code: &PairCode) -> String {
@@ -392,12 +404,16 @@ async fn read_message(recv: &mut iroh::endpoint::RecvStream, limit: usize) -> Re
     serde_json::from_slice(&buf).map_err(|e| e.to_string())
 }
 
-async fn reply(send: &mut iroh::endpoint::SendStream, msg: &Message) -> Result<(), String> {
+/// Sends one message and leaves the stream open for more.
+async fn write_message(send: &mut iroh::endpoint::SendStream, msg: &Message) -> Result<(), String> {
     let bytes = serde_json::to_vec(msg).map_err(|e| e.to_string())?;
     send.write_all(&(bytes.len() as u32).to_be_bytes()).await.map_err(|e| e.to_string())?;
-    send.write_all(&bytes).await.map_err(|e| e.to_string())?;
-    send.finish().map_err(|e| e.to_string())?;
-    Ok(())
+    send.write_all(&bytes).await.map_err(|e| e.to_string())
+}
+
+async fn reply(send: &mut iroh::endpoint::SendStream, msg: &Message) -> Result<(), String> {
+    write_message(send, msg).await?;
+    send.finish().map_err(|e| e.to_string())
 }
 
 impl SyncEngine {
@@ -687,7 +703,7 @@ impl SyncEngine {
             return Err("That is this device's own code".into());
         }
         let device = self.device();
-        let msg = Message::Pair { device, addr: self.my_addr(), secret: Some(code.secret) };
+        let msg = Message::Pair { device, addr: self.my_addr(), secret: Some(code.secret), commit: None };
         let conn = tokio::time::timeout(CONNECT_TIMEOUT, self.endpoint.connect(target, ALPN_PAIR))
             .await
             .map_err(|_| "Couldn't reach the other device. Check it is open and online.".to_string())?
@@ -726,9 +742,19 @@ impl SyncEngine {
             .map_err(|_| "Couldn't reach that device".to_string())?
             .map_err(|_| "Couldn't reach that device".to_string())?;
         let addr_id = addr.id;
-        self.emit("sync:pair-waiting", confirm_code(&addr_id, &self.endpoint.id()));
-        let msg = Message::Pair { device, addr: self.my_addr(), secret: None };
-        let response = tokio::time::timeout(Duration::from_secs(90), request(&conn, &msg, MAX_PAIR_MESSAGE))
+        let my_nonce = random_bytes::<16>()?;
+        let (mut send, mut recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
+        let start = Message::Pair { device, addr: self.my_addr(), secret: None, commit: Some(commitment(&my_nonce)) };
+        write_message(&mut send, &start).await?;
+        let their_nonce = match within(IO_TIMEOUT, read_message(&mut recv, MAX_PAIR_MESSAGE)).await? {
+            Message::PairChallenge { nonce } => nonce,
+            Message::PairRejected { reason } => return Err(reason),
+            _ => return Err("Unexpected reply while pairing".into()),
+        };
+        reply(&mut send, &Message::PairReveal { nonce: my_nonce }).await?;
+        let code = pairing_code(&self.endpoint.id(), &addr_id, &my_nonce, &their_nonce);
+        self.emit("sync:pair-waiting", code.clone());
+        let response = tokio::time::timeout(Duration::from_secs(90), read_message(&mut recv, MAX_PAIR_MESSAGE))
             .await
             .map_err(|_| "The other device didn't answer in time".to_string())??;
         conn.close(0u32.into(), b"done");
@@ -738,7 +764,6 @@ impl SyncEngine {
                 if device.id != addr_id.to_string() {
                     return Err("Identity mismatch".into());
                 }
-                let code = confirm_code(&addr_id, &self.endpoint.id());
                 if !self.ask_user("sync:pair-confirm", &device, code).await {
                     return Err("Pairing was cancelled".into());
                 }
@@ -811,7 +836,7 @@ impl SyncEngine {
         let (mut send, mut recv) = within(IO_TIMEOUT, async { conn.accept_bi().await.map_err(|e| e.to_string()) }).await?;
         let msg = within(IO_TIMEOUT, read_message(&mut recv, limit)).await?;
         if pairing {
-            let Message::Pair { device, addr: their_addr, secret } = msg else {
+            let Message::Pair { device, addr: their_addr, secret, commit } = msg else {
                 return Err("expected pair".into());
             };
             if device.id != remote.to_string() {
@@ -826,13 +851,25 @@ impl SyncEngine {
                     matches!(&g.pairing, Some(p) if p.secret == s && p.expires > now_ms())
                 }
                 None => {
+                    let commit = commit.ok_or_else(|| "pair request without a commitment".to_string())?;
+                    let my_nonce = random_bytes::<16>()?;
+                    write_message(&mut send, &Message::PairChallenge { nonce: my_nonce }).await?;
+                    let Message::PairReveal { nonce: their_nonce } = within(IO_TIMEOUT, read_message(&mut recv, MAX_PAIR_MESSAGE)).await? else {
+                        return Err("expected the other device's nonce".into());
+                    };
+                    if commitment(&their_nonce) != commit {
+                        let _ = reply(&mut send, &Message::PairRejected { reason: "Pairing check failed".into() }).await;
+                        wait_closed(&conn).await;
+                        return Ok(());
+                    }
+                    let code = pairing_code(&remote, &self.endpoint.id(), &their_nonce, &my_nonce);
                     let (rx, req) = {
                         let mut g = self.inner.lock().unwrap();
                         let request_id = g.next_request;
                         g.next_request += 1;
                         let (tx, rx) = oneshot::channel();
                         g.pending.insert(request_id, tx);
-                        (rx, PairRequest { request_id, device: device.clone(), code: confirm_code(&remote, &self.endpoint.id()) })
+                        (rx, PairRequest { request_id, device: device.clone(), code })
                     };
                     self.emit("sync:pair-request", req.clone());
                     self.ui.show_window();
@@ -1044,6 +1081,10 @@ mod tests {
         fn saw(&self, event: &str) -> usize {
             self.events.lock().unwrap().iter().filter(|(name, _)| name == event).count()
         }
+
+        fn last(&self, event: &str) -> serde_json::Value {
+            self.events.lock().unwrap().iter().rev().find(|(name, _)| name == event).map(|(_, v)| v.clone()).unwrap_or_default()
+        }
     }
 
     impl Ui for FakeUi {
@@ -1252,6 +1293,31 @@ mod tests {
             assert!(b.engine.snapshot().peers.iter().any(|p| p.id == a.engine.device().id));
             assert_eq!(a.ui.saw("sync:pair-confirm"), 1);
             assert!(b.ui.saw("sync:pair-request") >= 1);
+
+            let shown_on_a = a.ui.last("sync:pair-confirm")["code"].as_str().unwrap().to_string();
+            assert_eq!(shown_on_a.len(), 6);
+            assert_eq!(a.ui.last("sync:pair-waiting").as_str(), Some(shown_on_a.as_str()));
+            assert_eq!(b.ui.last("sync:pair-request")["code"].as_str(), Some(shown_on_a.as_str()));
+            let shown_to_wary = wary.ui.last("sync:pair-waiting").as_str().unwrap().to_string();
+            assert_ne!(shown_to_wary, shown_on_a, "every attempt gets its own code");
+        });
+    }
+
+    #[test]
+    fn a_starter_that_swaps_its_nonce_after_committing_is_refused() {
+        tauri::async_runtime::block_on(async {
+            let b = device("b", true).await;
+            let cheat = Endpoint::builder(presets::Minimal).relay_mode(RelayMode::Disabled).bind().await.unwrap();
+            let conn = cheat.connect(b.engine.my_addr(), ALPN_PAIR).await.unwrap();
+            let (mut send, mut recv) = conn.open_bi().await.unwrap();
+            let me = DeviceInfo { id: cheat.id().to_string(), name: "cheat".into() };
+            let start = Message::Pair { device: me, addr: cheat.addr(), secret: None, commit: Some(commitment(&[1; 16])) };
+            write_message(&mut send, &start).await.unwrap();
+            assert!(matches!(read_message(&mut recv, MAX_PAIR_MESSAGE).await, Ok(Message::PairChallenge { .. })));
+            reply(&mut send, &Message::PairReveal { nonce: [2; 16] }).await.unwrap();
+            assert!(matches!(read_message(&mut recv, MAX_PAIR_MESSAGE).await, Ok(Message::PairRejected { .. })));
+            assert_eq!(b.ui.saw("sync:pair-request"), 0, "the user is never asked");
+            assert!(b.engine.snapshot().peers.is_empty());
         });
     }
 
@@ -1339,10 +1405,15 @@ mod tests {
     }
 
     #[test]
-    fn confirm_code_is_symmetric() {
+    fn pairing_code_depends_on_both_nonces_and_who_started() {
         let a = SecretKey::generate().public();
         let b = SecretKey::generate().public();
-        assert_eq!(confirm_code(&a, &b), confirm_code(&b, &a));
-        assert_eq!(confirm_code(&a, &b).len(), 4);
+        let code = pairing_code(&a, &b, &[1; 16], &[2; 16]);
+        assert_eq!(code.len(), 6);
+        assert_eq!(code, pairing_code(&a, &b, &[1; 16], &[2; 16]));
+        assert_ne!(code, pairing_code(&a, &b, &[1; 16], &[3; 16]));
+        assert_ne!(code, pairing_code(&a, &b, &[9; 16], &[2; 16]));
+        assert_ne!(code, pairing_code(&b, &a, &[1; 16], &[2; 16]));
+        assert_ne!(commitment(&[1; 16]), commitment(&[2; 16]));
     }
 }

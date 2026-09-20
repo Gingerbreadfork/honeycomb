@@ -117,7 +117,7 @@ new phone rather than restoring onto it.
 Open Settings, then Devices, and choose Pair a device.
 
 - **Same network.** Other computers running Honeycomb show up automatically. Tap Pair, confirm the
-  four-digit code shown on both screens, done.
+  six-digit code shown on both screens, done.
 - **Anywhere else.** Show a code on one device and enter it on the other, or point the phone's
   camera at the QR code beside it. Codes work once and expire after ten minutes.
 
