@@ -44,6 +44,11 @@ const DEFAULTS: Settings = {
   background: false,
 };
 
+/** A stamp newer than the row's current one, even when this device's clock runs behind. */
+function stampAfter(r: Reading): number {
+  return Math.max(Date.now(), r.updated + 1);
+}
+
 function guessUnit(): Unit {
   try {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
@@ -198,7 +203,7 @@ class Store {
 
   update(id: string, patch: Partial<Omit<Reading, 'id' | 'updated'>>): void {
     this.rows = this.rows
-      .map((r) => (r.id === id ? { ...r, ...patch, updated: Date.now() } : r))
+      .map((r) => (r.id === id ? { ...r, ...patch, updated: stampAfter(r) } : r))
       .sort((a, b) => a.time.getTime() - b.time.getTime());
     void this.persist();
   }
@@ -206,13 +211,13 @@ class Store {
   remove(id: string): void {
     const removed = this.rows.find((r) => r.id === id);
     if (!removed) return;
-    this.rows = this.rows.map((r) => (r.id === id ? { ...r, deleted: Date.now(), updated: Date.now() } : r));
+    this.rows = this.rows.map((r) => (r.id === id ? { ...r, deleted: Date.now(), updated: stampAfter(r) } : r));
     if (this.lastSaved?.id === id) this.lastSaved = null;
     void this.persist();
     this.toast('Reading deleted', {
       label: 'Undo',
       run: () => {
-        this.rows = this.rows.map((r) => (r.id === id ? { ...r, deleted: null, updated: Date.now() } : r));
+        this.rows = this.rows.map((r) => (r.id === id ? { ...r, deleted: null, updated: stampAfter(r) } : r));
         void this.persist();
       },
     });

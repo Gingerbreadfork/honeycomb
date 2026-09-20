@@ -232,12 +232,20 @@ fn decode_code(text: &str) -> Result<PairCode, String> {
     postcard::from_bytes(&bytes).map_err(|_| "That doesn't look like a pairing code".to_string())
 }
 
+/// Rows with the same stamp are ordered by content, so every device settles on the same one.
+fn beats(incoming: &Row, existing: &Row) -> bool {
+    fn key(r: &Row) -> (u64, bool, u64, &str, &str, &str) {
+        (r.updated, r.deleted.is_some(), r.mmol.to_bits(), &r.unit, &r.context, &r.note)
+    }
+    key(incoming) > key(existing)
+}
+
 /// Keeps the newer of two rows by their `updated` stamp. Returns how many local rows changed.
 fn merge_rows(local: &mut BTreeMap<String, Row>, incoming: Vec<Row>) -> usize {
     let mut changed = 0;
     for row in incoming {
         match local.get(&row.id) {
-            Some(existing) if existing.updated >= row.updated => {}
+            Some(existing) if !beats(&row, existing) => {}
             _ => {
                 local.insert(row.id.clone(), row);
                 changed += 1;
@@ -788,6 +796,19 @@ mod tests {
         assert_eq!(local["a"].updated, 10);
         assert_eq!(local["b"].deleted, Some(30));
         assert!(local.contains_key("c"));
+    }
+
+    #[test]
+    fn equal_stamps_converge() {
+        let mut edited = row("a", 10, None);
+        edited.note = "edited on a".into();
+        let deleted = row("a", 10, Some(10));
+        let mut a = BTreeMap::from([("a".to_string(), edited.clone())]);
+        let mut b = BTreeMap::from([("a".to_string(), deleted.clone())]);
+        merge_rows(&mut a, vec![deleted]);
+        merge_rows(&mut b, vec![edited]);
+        assert_eq!(a, b);
+        assert!(a["a"].deleted.is_some());
     }
 
     #[test]

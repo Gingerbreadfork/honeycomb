@@ -130,7 +130,7 @@ data.
 
 ```csv
 time,glucose,unit,context,note,id,updated,deleted
-2026-09-15T08:42:00+10:00,6.4,mmol/L,fasting,,k3v9tq2xm8pd,2026-09-15T08:42:00+10:00,
+2026-09-15T08:42:00+10:00,6.4,mmol/L,fasting,,k3v9tq2xm8pd,2026-09-15T08:42:07.512+10:00,
 ```
 
 The first five columns are what you would expect. The last three exist for sync and are harmless

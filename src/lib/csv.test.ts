@@ -27,6 +27,16 @@ describe('csv', () => {
     expect(back[1].updated).toBe(1000);
   });
 
+  it('keeps sync stamps to the millisecond and still reads whole-second files', () => {
+    const stamp = 1789925573216;
+    const reading = { id: 'a', time: new Date(stamp), mmol: 5.5, unit: 'mmol/L' as const, context: '' as const, note: '', updated: stamp, deleted: stamp + 7 };
+    const back = readingsFromCsv(readingsToCsv([reading]), 'mmol/L')[0];
+    expect(back.updated).toBe(stamp);
+    expect(back.deleted).toBe(stamp + 7);
+    const old = 'time,glucose,unit,context,note,id,updated,deleted\n2026-09-15T08:42:00+10:00,6.4,mmol/L,,,k3,2026-09-15T08:42:31+10:00,\n';
+    expect(new Date(readingsFromCsv(old, 'mmol/L')[0].updated).getSeconds()).toBe(31);
+  });
+
   it('gives legacy rows a stable id and hides tombstones from the clean export', () => {
     const legacy = 'time,glucose,unit,context,note\n2026-09-01T07:30:00+10:00,6.1,mmol/L,fasting,\n';
     const a = readingsFromCsv(legacy, 'mmol/L');

@@ -1,12 +1,13 @@
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
-export function toLocalIso(d: Date): string {
+export function toLocalIso(d: Date, withMs = false): string {
   const off = -d.getTimezoneOffset();
   const sign = off >= 0 ? '+' : '-';
   const a = Math.abs(off);
   return (
     `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}` +
     `T${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}` +
+    (withMs ? `.${String(d.getMilliseconds()).padStart(3, '0')}` : '') +
     `${sign}${pad2(Math.floor(a / 60))}:${pad2(a % 60)}`
   );
 }
@@ -14,13 +15,13 @@ export function toLocalIso(d: Date): string {
 export function parseTime(raw: string): Date | null {
   const s = raw.trim();
   if (!s) return null;
-  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{1,2}):(\d{2})(?::(\d{2}))?(Z|[+-]\d{2}:?\d{2})?$/);
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(Z|[+-]\d{2}:?\d{2})?$/);
   if (m) {
-    if (m[7]) {
+    if (m[8]) {
       const d = new Date(s.replace(' ', 'T').replace(/([+-]\d{2})(\d{2})$/, '$1:$2'));
       return isNaN(d.getTime()) ? null : d;
     }
-    return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], m[6] ? +m[6] : 0);
+    return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], m[6] ? +m[6] : 0, m[7] ? +m[7].padEnd(3, '0') : 0);
   }
   m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (m) return new Date(+m[1], +m[2] - 1, +m[3], 12, 0, 0);

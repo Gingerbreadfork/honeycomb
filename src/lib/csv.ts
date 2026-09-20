@@ -164,8 +164,8 @@ export function readingsToCsv(readings: Reading[]): string {
     r.context,
     r.note,
     r.id,
-    toLocalIso(new Date(r.updated)),
-    r.deleted ? toLocalIso(new Date(r.deleted)) : '',
+    toLocalIso(new Date(r.updated), true),
+    r.deleted ? toLocalIso(new Date(r.deleted), true) : '',
   ]);
   return serializeCsv([HEADER, ...rows]);
 }
