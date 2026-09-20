@@ -46,7 +46,7 @@
       e.stopPropagation();
       open = false;
       root.querySelector<HTMLElement>('.chip')?.focus();
-    } else if (e.key === 'Enter') {
+    } else if (e.key === 'Enter' && e.target instanceof HTMLInputElement) {
       e.preventDefault();
       e.stopPropagation();
       apply();
