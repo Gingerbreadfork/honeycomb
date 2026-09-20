@@ -73,10 +73,35 @@
     }
     hover = best >= 0 ? best : null;
   }
+
+  const byHour = $derived([...points].sort((a, b) => a.px - b.px).map((p) => p.i));
+
+  function onkey(e: KeyboardEvent): void {
+    if (!points.length) return;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      e.preventDefault();
+      const d = e.key === 'ArrowRight' ? 1 : -1;
+      const at = hover === null ? -1 : byHour.indexOf(hover);
+      const next = at < 0 ? (d > 0 ? 0 : byHour.length - 1) : Math.max(0, Math.min(byHour.length - 1, at + d));
+      hover = byHour[next];
+    } else if (e.key === 'Escape') hover = null;
+  }
 </script>
 
 <div class="chart" bind:clientWidth={width} style:height="{height}px">
-  <svg {width} {height} viewBox="0 0 {width} {height}" role="img" aria-label="Readings by time of day" onpointermove={onmove} onpointerleave={() => (hover = null)}>
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+  <svg
+    {width}
+    {height}
+    viewBox="0 0 {width} {height}"
+    role="application"
+    aria-label="Readings by time of day"
+    tabindex="0"
+    onpointermove={onmove}
+    onpointerleave={() => (hover = null)}
+    onkeydown={onkey}
+    onblur={() => (hover = null)}
+  >
     <rect class="band" x={m.left} width={innerW} y={y(targets.high)} height={Math.max(0, y(targets.low) - y(targets.high))} />
     <line class="band-edge" x1={m.left} x2={m.left + innerW} y1={y(targets.high)} y2={y(targets.high)} />
     <line class="band-edge" x1={m.left} x2={m.left + innerW} y1={y(targets.low)} y2={y(targets.low)} />
@@ -116,6 +141,11 @@
   svg {
     display: block;
     overflow: visible;
+  }
+  svg:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 4px;
+    border-radius: 4px;
   }
   .band {
     fill: var(--band-fill);
