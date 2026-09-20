@@ -69,7 +69,7 @@ function guessUnit(): Unit {
   }
 }
 
-class Store {
+export class Store {
   settings = $state<Settings>({ ...DEFAULTS });
   rows = $state.raw<Reading[]>([]);
   readings = $derived(this.rows.filter((r) => !r.deleted));
