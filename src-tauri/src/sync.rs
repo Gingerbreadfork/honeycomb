@@ -25,6 +25,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(12);
 const PAIRING_TTL: Duration = Duration::from_secs(10 * 60);
 const SYNC_INTERVAL: Duration = Duration::from_secs(120);
 const CHANGE_DEBOUNCE: Duration = Duration::from_millis(1500);
+const MAX_DEVICE_NAME: usize = 60;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Row {
@@ -193,6 +194,22 @@ fn random_bytes<const N: usize>() -> [u8; N] {
     out
 }
 
+/// Trimmed and cut to a length that always fits the address lookup record.
+fn clean_device_name(name: &str) -> String {
+    let mut out = String::new();
+    for c in name.trim().chars().filter(|c| !c.is_control()) {
+        if out.len() + c.len_utf8() > MAX_DEVICE_NAME {
+            break;
+        }
+        out.push(c);
+    }
+    out.trim_end().to_string()
+}
+
+fn advert(device_name: &str) -> Result<UserData, String> {
+    format!("honeycomb:{device_name}").parse().map_err(|_| "device name too long".to_string())
+}
+
 fn default_device_name() -> String {
     if cfg!(target_os = "android") {
         return "Phone".into();
@@ -331,9 +348,14 @@ impl SyncEngine {
             .ok()
             .and_then(|t| serde_json::from_str(&t).ok())
             .unwrap_or_default();
-        let device_name = file.device_name.clone().unwrap_or_else(default_device_name);
+        let device_name = file
+            .device_name
+            .as_deref()
+            .map(clean_device_name)
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| clean_device_name(&default_device_name()));
 
-        let user_data: UserData = format!("honeycomb:{device_name}").parse().map_err(|_| "device name too long".to_string())?;
+        let user_data = advert(&device_name)?;
         let endpoint = Endpoint::builder(presets::N0)
             .secret_key(secret)
             .alpns(vec![ALPN_SYNC.to_vec(), ALPN_PAIR.to_vec()])
@@ -488,9 +510,12 @@ impl SyncEngine {
     }
 
     pub fn set_device_name(&self, name: String) {
-        let name = name.trim().to_string();
+        let name = clean_device_name(&name);
         if name.is_empty() {
             return;
+        }
+        if let Ok(user_data) = advert(&name) {
+            self.endpoint.set_user_data_for_address_lookup(Some(user_data));
         }
         self.inner.lock().unwrap().device_name = name;
         self.save();
@@ -523,12 +548,13 @@ impl SyncEngine {
     }
 
     fn add_peer(&self, device: &DeviceInfo, addr: EndpointAddr) {
+        let name = clean_device_name(&device.name);
         let mut g = self.inner.lock().unwrap();
         if let Some(p) = g.peers.iter_mut().find(|p| p.id == device.id) {
-            p.name = device.name.clone();
+            p.name = name;
             p.addr = addr;
         } else {
-            g.peers.push(Peer { id: device.id.clone(), name: device.name.clone(), addr, added: now_ms(), last_sync: None });
+            g.peers.push(Peer { id: device.id.clone(), name, addr, added: now_ms(), last_sync: None });
         }
     }
 
@@ -693,7 +719,7 @@ impl SyncEngine {
             let changed = merge_rows(&mut g.rows, rows);
             if let Some(p) = g.peers.iter_mut().find(|p| p.id == remote.to_string()) {
                 p.last_sync = Some(now_ms());
-                p.name = device.name.clone();
+                p.name = clean_device_name(&device.name);
                 if their_addr.id == remote && !their_addr.addrs.is_empty() {
                     p.addr = their_addr;
                 }
@@ -763,7 +789,7 @@ impl SyncEngine {
                     let changed = merge_rows(&mut g.rows, rows);
                     if let Some(p) = g.peers.iter_mut().find(|p| p.id == peer.id) {
                         p.last_sync = Some(now_ms());
-                        p.name = device.name.clone();
+                        p.name = clean_device_name(&device.name);
                         if addr.id.to_string() == peer.id && !addr.addrs.is_empty() {
                             p.addr = addr;
                         }
@@ -860,6 +886,14 @@ mod tests {
         assert!(addr.addrs.iter().any(|a| matches!(a, TransportAddr::Relay(u) if u.to_string() == relay)));
         assert_eq!(back.secret, [1, 2, 3, 4]);
         assert!(decode_code("nonsense").is_err());
+    }
+
+    #[test]
+    fn device_names_always_fit_the_advert() {
+        assert_eq!(clean_device_name("  Kitchen laptop \n"), "Kitchen laptop");
+        let long = clean_device_name(&"é".repeat(400));
+        assert!(long.len() <= MAX_DEVICE_NAME);
+        assert!(advert(&long).is_ok());
     }
 
     #[test]

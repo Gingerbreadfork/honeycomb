@@ -38,7 +38,7 @@
   {#if snap}
     <div class="me">
       <span class="lbl">This device is called</span>
-      <input class="field name" value={snap.device.name} onchange={rename} aria-label="Name of this device" />
+      <input class="field name" value={snap.device.name} onchange={rename} maxlength="40" aria-label="Name of this device" />
     </div>
 
     {#if snap.peers.length}
