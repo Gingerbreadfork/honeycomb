@@ -1,4 +1,4 @@
-export type Scale = ((v: number) => number) & { domain: [number, number]; range: [number, number]; invert: (p: number) => number };
+export type Scale = ((v: number) => number) & { domain: [number, number]; range: [number, number] };
 
 export function linear(domain: [number, number], range: [number, number]): Scale {
   const [d0, d1] = domain;
@@ -7,7 +7,6 @@ export function linear(domain: [number, number], range: [number, number]): Scale
   const fn = ((v: number) => r0 + (v - d0) * k) as Scale;
   fn.domain = domain;
   fn.range = range;
-  fn.invert = (p: number) => (k === 0 ? d0 : d0 + (p - r0) / k);
   return fn;
 }
 
@@ -33,10 +32,6 @@ export function hexPath(cx: number, cy: number, r: number): string {
   const w = r * 0.8660254;
   const h = r / 2;
   return `M${cx} ${cy - r}L${cx + w} ${cy - h}L${cx + w} ${cy + h}L${cx} ${cy + r}L${cx - w} ${cy + h}L${cx - w} ${cy - h}Z`;
-}
-
-export function clamp(v: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, v));
 }
 
 /** Smooth path through points using Catmull-Rom converted to cubic beziers. */

@@ -111,7 +111,6 @@ export class SyncState {
       return;
     }
     await listen<SyncSnapshot>('sync:state', (e) => (this.snapshot = e.payload));
-    await listen<string>('sync:error', (e) => (this.error = e.payload));
     await listen<Row[]>('sync:rows', (e) => {
       const readings = e.payload.map(fromRow).filter((r): r is Reading => r !== null);
       this.onRows?.(readings);

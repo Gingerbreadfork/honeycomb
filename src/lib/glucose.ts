@@ -102,11 +102,11 @@ export function toneOf(status: Status): Tone {
 
 export type Context = '' | 'fasting' | 'before meal' | 'after meal' | 'bedtime';
 
-export const CONTEXTS: { value: Context; label: string; key: string }[] = [
-  { value: 'fasting', label: 'Fasting', key: '1' },
-  { value: 'before meal', label: 'Before meal', key: '2' },
-  { value: 'after meal', label: 'After meal', key: '3' },
-  { value: 'bedtime', label: 'Bedtime', key: '4' },
+export const CONTEXTS: { value: Context; label: string }[] = [
+  { value: 'fasting', label: 'Fasting' },
+  { value: 'before meal', label: 'Before meal' },
+  { value: 'after meal', label: 'After meal' },
+  { value: 'bedtime', label: 'Bedtime' },
 ];
 
 export function normalizeContext(raw: string): Context {
