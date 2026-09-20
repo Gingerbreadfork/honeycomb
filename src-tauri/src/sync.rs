@@ -232,7 +232,7 @@ fn decode_code(text: &str) -> Result<PairCode, String> {
     postcard::from_bytes(&bytes).map_err(|_| "That doesn't look like a pairing code".to_string())
 }
 
-/// Keeps the newer of two rows by their `updated` stamp. Returns true when the local set changed.
+/// Keeps the newer of two rows by their `updated` stamp. Returns how many local rows changed.
 fn merge_rows(local: &mut BTreeMap<String, Row>, incoming: Vec<Row>) -> usize {
     let mut changed = 0;
     for row in incoming {
@@ -468,23 +468,10 @@ impl SyncEngine {
     }
 
     pub fn set_rows(&self, rows: Vec<Row>) {
-        {
-            let mut g = self.inner.lock().unwrap();
-            let mut changed = false;
-            for row in rows {
-                match g.rows.get(&row.id) {
-                    Some(existing) if *existing == row => {}
-                    _ => {
-                        g.rows.insert(row.id.clone(), row);
-                        changed = true;
-                    }
-                }
-            }
-            if !changed {
-                return;
-            }
+        let changed = merge_rows(&mut self.inner.lock().unwrap().rows, rows);
+        if changed > 0 {
+            self.wake.notify_one();
         }
-        self.wake.notify_one();
     }
 
     pub fn set_device_name(&self, name: String) {

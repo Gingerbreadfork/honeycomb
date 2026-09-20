@@ -3,6 +3,7 @@ import { DEFAULT_TARGETS, type Context, type Reading, type Targets, type Unit } 
 import { appPaths, fileMtime, quitApp, readText, setBackgroundMode, writeText, win, isTauri, type AppPaths } from './platform';
 import { SyncState } from './sync.svelte';
 import { planImport, type ImportPlan } from './import';
+import { mergeSynced } from './merge';
 import { pickCsvText } from './platform';
 import { setHour12, systemHour12 } from './time';
 
@@ -101,10 +102,11 @@ class Store {
     this.sync.push(this.rows);
   }
 
-  /** Replaces local rows with the merged set from the sync engine and writes it to disk. */
-  private applySynced(rows: Reading[]): void {
-    this.rows = [...rows].sort((a, b) => a.time.getTime() - b.time.getTime());
-    void this.persist(false);
+  /** Folds the sync engine's rows into local rows and writes the result to disk. */
+  private applySynced(incoming: Reading[]): void {
+    const { rows, ahead } = mergeSynced(this.rows, incoming);
+    this.rows = rows;
+    void this.persist(ahead);
   }
 
   private async loadSettings(): Promise<void> {
