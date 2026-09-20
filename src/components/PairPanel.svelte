@@ -137,7 +137,17 @@
     </div>
   {/if}
 
-  {#if busy && app.sync.waitingCode}
+  {#if app.sync.pairConfirm}
+    {@const ask = app.sync.pairConfirm}
+    <div class="waiting">
+      <span>{ask.device.name} accepted. Was it showing this code?</span>
+      <span class="confirm">{ask.code}</span>
+    </div>
+    <div class="row">
+      <button type="button" class="btn small primary" onclick={() => app.sync.respondPair(ask.request_id, true)}>Yes, pair</button>
+      <button type="button" class="btn small" onclick={() => app.sync.respondPair(ask.request_id, false)}>No, cancel</button>
+    </div>
+  {:else if busy && app.sync.waitingCode}
     <div class="waiting">
       <span>{busy} Check the same code appears there.</span>
       <span class="confirm">{app.sync.waitingCode}</span>

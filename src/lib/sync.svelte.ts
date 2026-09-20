@@ -91,6 +91,8 @@ export class SyncState {
   error = $state<string | null>(null);
   pairRequest = $state<PairRequest | null>(null);
   waitingCode = $state<string | null>(null);
+  /** The other device accepted; this one still has to agree the codes matched. */
+  pairConfirm = $state<PairRequest | null>(null);
   onRows: ((rows: Reading[]) => void) | null = null;
   onPulled: ((from: string, changed: number) => void) | null = null;
   onPaired: ((device: DeviceInfo) => void) | null = null;
@@ -121,6 +123,7 @@ export class SyncState {
       if (this.pairRequest?.request_id === e.payload) this.pairRequest = null;
     });
     await listen<string>('sync:pair-waiting', (e) => (this.waitingCode = e.payload));
+    await listen<PairRequest>('sync:pair-confirm', (e) => (this.pairConfirm = e.payload));
     try {
       this.snapshot = await invoke<SyncSnapshot>('sync_start');
     } catch (e) {
@@ -163,11 +166,13 @@ export class SyncState {
       return await invoke<DeviceInfo>('sync_pair_nearby', { id });
     } finally {
       this.waitingCode = null;
+      this.pairConfirm = null;
     }
   }
 
   respondPair(requestId: number, accept: boolean): void {
-    this.pairRequest = null;
+    if (this.pairRequest?.request_id === requestId) this.pairRequest = null;
+    if (this.pairConfirm?.request_id === requestId) this.pairConfirm = null;
     if (!isTauri) return;
     void invoke('sync_respond_pair', { requestId, accept }).catch(() => {});
   }

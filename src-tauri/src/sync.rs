@@ -575,7 +575,8 @@ impl SyncEngine {
     pub async fn pair_with_code(&self, text: &str) -> Result<DeviceInfo, String> {
         let code = decode_code(text)?;
         let target = code.addr()?;
-        if target.id == self.endpoint.id() {
+        let target_id = target.id;
+        if target_id == self.endpoint.id() {
             return Err("That is this device's own code".into());
         }
         let device = self.device();
@@ -588,6 +589,9 @@ impl SyncEngine {
         conn.close(0u32.into(), b"done");
         match response {
             Message::PairOk { device, addr } => {
+                if device.id != target_id.to_string() {
+                    return Err("Identity mismatch".into());
+                }
                 self.add_peer(&device, addr);
                 self.save();
                 self.emit_state();
@@ -614,7 +618,8 @@ impl SyncEngine {
             .await
             .map_err(|_| "Couldn't reach that device".to_string())?
             .map_err(|_| "Couldn't reach that device".to_string())?;
-        let _ = self.app.emit("sync:pair-waiting", confirm_code(&addr.id, &self.endpoint.id()));
+        let addr_id = addr.id;
+        let _ = self.app.emit("sync:pair-waiting", confirm_code(&addr_id, &self.endpoint.id()));
         let msg = Message::Pair { device, addr: self.my_addr(), secret: None };
         let response = tokio::time::timeout(Duration::from_secs(90), request(&conn, &msg, MAX_PAIR_MESSAGE))
             .await
@@ -622,6 +627,14 @@ impl SyncEngine {
         conn.close(0u32.into(), b"done");
         match response {
             Message::PairOk { device, addr } => {
+                let device = DeviceInfo { id: device.id, name: clean_device_name(&device.name) };
+                if device.id != addr_id.to_string() {
+                    return Err("Identity mismatch".into());
+                }
+                let code = confirm_code(&addr_id, &self.endpoint.id());
+                if !self.ask_user("sync:pair-confirm", &device, code).await {
+                    return Err("Pairing was cancelled".into());
+                }
                 self.add_peer(&device, addr);
                 self.save();
                 self.emit_state();
@@ -631,6 +644,22 @@ impl SyncEngine {
             Message::PairRejected { reason } => Err(reason),
             _ => Err("Unexpected reply while pairing".into()),
         }
+    }
+
+    /// Shows the confirmation code on this device and waits for the user's answer.
+    async fn ask_user(&self, event: &str, device: &DeviceInfo, code: String) -> bool {
+        let (rx, request_id) = {
+            let mut g = self.inner.lock().unwrap();
+            let request_id = g.next_request;
+            g.next_request += 1;
+            let (tx, rx) = oneshot::channel();
+            g.pending.insert(request_id, tx);
+            (rx, request_id)
+        };
+        let _ = self.app.emit(event, PairRequest { request_id, device: device.clone(), code });
+        let answer = tokio::time::timeout(Duration::from_secs(80), rx).await;
+        self.inner.lock().unwrap().pending.remove(&request_id);
+        answer.ok().and_then(|r| r.ok()).unwrap_or(false)
     }
 
     pub fn respond_pair(&self, request_id: u64, accept: bool) {
@@ -683,6 +712,7 @@ impl SyncEngine {
                 wait_closed(&conn).await;
                 return Ok(());
             }
+            let device = DeviceInfo { id: device.id, name: clean_device_name(&device.name) };
             let accepted = match secret {
                 Some(s) => {
                     let g = self.inner.lock().unwrap();
