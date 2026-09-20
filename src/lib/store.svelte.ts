@@ -70,6 +70,7 @@ class Store {
   sync = new SyncState();
   page = $state<Page>('log');
   ready = $state(false);
+  startError = $state<string | null>(null);
   loadError = $state<string | null>(null);
   toasts = $state<Toast[]>([]);
   settingsOpen = $state(false);
@@ -88,11 +89,16 @@ class Store {
   private queue: Promise<void> = Promise.resolve();
 
   async init(): Promise<void> {
-    this.paths = await appPaths();
-    await this.loadSettings();
-    this.applyTheme();
-    this.applyClock();
-    await this.loadReadings();
+    try {
+      this.paths = await appPaths();
+      await this.loadSettings();
+      this.applyTheme();
+      this.applyClock();
+      await this.loadReadings();
+    } catch (e) {
+      this.startError = String(e);
+      return;
+    }
     this.ready = true;
     setInterval(() => (this.now = new Date()), 15_000);
     win.onResized(async () => (this.maximized = await win.isMaximized()));
@@ -183,6 +189,10 @@ class Store {
       else if (this.ready) this.sync.push(rows);
       if (rewrite) void this.persist(false);
     } catch (e) {
+      if (mode === 'external') {
+        this.toast(`Couldn't reload the file: ${String(e)}`);
+        return;
+      }
       this.rows = [];
       this.loadError = String(e);
     }
@@ -201,6 +211,8 @@ class Store {
   }
 
   private persist(push = true): Promise<void> {
+    // Rows that never loaded must not be written over the file they are still in.
+    if (this.loadError) return this.queue;
     const snapshot = this.rows;
     if (push) this.sync.push(snapshot);
     this.queue = this.queue.then(async () => {

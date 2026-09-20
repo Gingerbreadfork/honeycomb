@@ -71,7 +71,17 @@
 <div class="app" class:tauri={isDesktop} class:mobile={isMobile} class:maximized={app.maximized}>
   <TitleBar />
   <main>
-    {#if app.ready}
+    {#if app.startError || app.loadError}
+      <div class="trouble" role="alert">
+        <h2 class="display">{app.startError ? "Honeycomb couldn't start" : "Your readings file couldn't be read"}</h2>
+        <p>{app.startError ?? app.loadError}</p>
+        {#if app.loadError}
+          <p class="muted">{app.dataPath}</p>
+          <p class="muted">Nothing will be saved until it can be read, so the file is left as it is.</p>
+          <button type="button" class="btn primary" onclick={() => app.loadReadings()}>Try again</button>
+        {/if}
+      </div>
+    {:else if app.ready}
       {#key app.page}
         <div class="page">
           {#if app.page === 'log'}
@@ -138,6 +148,24 @@
     position: absolute;
     inset: 0;
     animation: rise-in var(--t-slow) var(--ease-out);
+  }
+  .trouble {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    max-width: 60ch;
+    margin: 0 auto;
+    padding: 64px 24px;
+  }
+  .trouble h2 {
+    font-size: 22px;
+  }
+  .trouble p {
+    overflow-wrap: anywhere;
+  }
+  .trouble .btn {
+    margin-top: 8px;
   }
   .edge {
     position: absolute;
