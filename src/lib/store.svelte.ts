@@ -1,12 +1,12 @@
 import { parseReadings, readingsToCsv, newId } from './csv';
 import { DEFAULT_TARGETS, type Context, type Reading, type Targets, type Unit } from './glucose';
-import { appPaths, fileMtime, quitApp, readText, setBackgroundMode, writeText, win, isTauri, type AppPaths } from './platform';
+import { appPaths, backupFile, fileMtime, quitApp, readText, setBackgroundMode, writeText, win, isTauri, type AppPaths } from './platform';
 import { SyncState } from './sync.svelte';
 import { planImport, type ImportPlan } from './import';
 import { mergeSynced } from './merge';
 import { dedupeIds, reconcileExternal } from './reconcile';
 import { pickCsvText } from './platform';
-import { setHour12, systemHour12 } from './time';
+import { dayKey, setHour12, systemHour12 } from './time';
 
 export type Page = 'log' | 'trends' | 'report';
 export type Theme = 'system' | 'light' | 'dark';
@@ -34,6 +34,8 @@ export interface ReadingInput {
   context: Context;
   note: string;
 }
+
+const BACKUPS_KEPT = 14;
 
 const DEFAULTS: Settings = {
   unit: 'mmol/L',
@@ -85,6 +87,7 @@ class Store {
 
   private fileMtime: number | null = null;
   private writtenIds = new Set<string>();
+  private backedUp = '';
   private toastSeq = 0;
   private queue: Promise<void> = Promise.resolve();
 
@@ -217,6 +220,7 @@ class Store {
     if (push) this.sync.push(snapshot);
     this.queue = this.queue.then(async () => {
       try {
+        await this.backupOncePerDay();
         this.fileMtime = await writeText(this.dataPath, readingsToCsv(snapshot));
         this.writtenIds = new Set(snapshot.map((r) => r.id));
       } catch (e) {
@@ -224,6 +228,17 @@ class Store {
       }
     });
     return this.queue;
+  }
+
+  private async backupOncePerDay(): Promise<void> {
+    const mark = `${this.dataPath}|${dayKey(new Date())}`;
+    if (mark === this.backedUp) return;
+    try {
+      await backupFile(this.dataPath, dayKey(new Date()), BACKUPS_KEPT);
+      this.backedUp = mark;
+    } catch {
+      // A failed backup must not stop the reading from being saved.
+    }
   }
 
   add(input: ReadingInput): Reading {

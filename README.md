@@ -139,6 +139,10 @@ in a spreadsheet. The export from the Report page is the tidy five-column versio
 rows. Files without the extra columns, including exports and reasonably named spreadsheets with a
 time and a glucose column, import cleanly, and importing the same file twice adds nothing.
 
+Before the first change on any day, the file as it stood is copied to
+`~/.local/share/honeycomb/backups/readings-<date>.csv`. The last 14 are kept. To go back to one,
+quit the app and copy it over `readings.csv`, or import it to bring back only what is missing.
+
 Settings live in `~/.config/honeycomb/settings.json`. Edits made to the data file outside the app
 are picked up the next time the window gains focus.
 

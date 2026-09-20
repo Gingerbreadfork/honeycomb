@@ -43,6 +43,15 @@ export async function fileMtime(path: string): Promise<number | null> {
   return v ? Number(v) : null;
 }
 
+/** Keeps a dated copy of the file as it was before today's first change. Does nothing in the browser. */
+export async function backupFile(path: string, label: string, keep: number): Promise<void> {
+  if (isTauri) await invoke('backup_file', { path, label, keep });
+}
+
+export async function backupsPath(): Promise<string | null> {
+  return isTauri ? invoke<string>('backups_path') : null;
+}
+
 export async function pickSavePath(defaultName: string): Promise<string | null> {
   if (!isTauri) return defaultName;
   return saveDialog({ defaultPath: defaultName, filters: [{ name: 'CSV', extensions: ['csv'] }] });

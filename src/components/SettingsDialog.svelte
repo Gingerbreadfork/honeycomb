@@ -1,7 +1,7 @@
 <script lang="ts">
   import { app, type Clock, type Theme } from '../lib/store.svelte';
   import { DEFAULT_TARGETS, formatValue, roundForUnit, targetsProblem, toMmol, type Unit, UNITS } from '../lib/glucose';
-  import { isDesktop, pickSavePath, reveal } from '../lib/platform';
+  import { backupsPath, isDesktop, pickSavePath, reveal } from '../lib/platform';
   import Dialog from './Dialog.svelte';
   import Icon from './Icon.svelte';
   import DevicesSection from './DevicesSection.svelte';
@@ -45,6 +45,15 @@
     await app.updateSettings({ dataFile: path });
     const name = path.split('/').pop();
     app.toast(app.sync.configured ? `Now using ${name}. Paired devices will sync their readings into it.` : `Now using ${name}`);
+  }
+
+  async function showBackups(): Promise<void> {
+    try {
+      const dir = await backupsPath();
+      if (dir) await reveal(dir);
+    } catch {
+      app.toast('No backups yet. The first is made the next time a reading changes.');
+    }
   }
 
   async function useDefault(): Promise<void> {
@@ -127,7 +136,7 @@
     <section>
       <div class="head">
         <h3>Where readings are kept</h3>
-        <p>A plain text file you can open in any spreadsheet. Import an exported file to bring readings onto a new computer, or point Honeycomb at a file you already have.</p>
+        <p>A plain text file you can open in any spreadsheet. Import an exported file to bring readings onto a new computer, or point Honeycomb at a file you already have. A copy from before each day's first change is kept for two weeks.</p>
       </div>
       <div class="path" title={app.dataPath}>{app.dataPath}</div>
       <div class="row">
@@ -135,6 +144,7 @@
         {#if isDesktop}
           <button type="button" class="btn small" onclick={() => reveal(app.dataPath)}><Icon name="folder" size={14} /> Show in folder</button>
           <button type="button" class="btn small" onclick={changeFile}>Choose another file</button>
+          <button type="button" class="btn small ghost" onclick={showBackups}>Show backups</button>
         {/if}
         {#if app.settings.dataFile}
           <button type="button" class="btn small ghost" onclick={useDefault}>Use default</button>

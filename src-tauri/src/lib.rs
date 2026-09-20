@@ -106,6 +106,46 @@ fn write_text(path: String, text: String) -> Result<Option<u64>, String> {
     Ok(mtime_of(&path))
 }
 
+fn backups_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(app.path().data_dir().map_err(|e| e.to_string())?.join(profile_dir_name()).join("backups"))
+}
+
+/// Copies the file into the backups folder unless one with this label exists, then keeps the newest `keep`.
+#[tauri::command]
+fn backup_file(app: tauri::AppHandle, path: String, label: String, keep: usize) -> Result<Option<String>, String> {
+    let src = PathBuf::from(path);
+    if !src.is_file() || label.is_empty() || !label.chars().all(|c| c.is_ascii_digit() || c == '-') {
+        return Ok(None);
+    }
+    let dir = backups_dir(&app)?;
+    rotate_backup(&src, &dir, &label, keep).map(|made| made.map(|p| p.to_string_lossy().into_owned())).map_err(|e| e.to_string())
+}
+
+fn rotate_backup(src: &Path, dir: &Path, label: &str, keep: usize) -> std::io::Result<Option<PathBuf>> {
+    let stem = src.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "readings".into());
+    let dest = dir.join(format!("{stem}-{label}.csv"));
+    if dest.exists() {
+        return Ok(None);
+    }
+    std::fs::create_dir_all(dir)?;
+    write_new_private(&dest, &String::from_utf8_lossy(&std::fs::read(src)?))?;
+    let prefix = format!("{stem}-");
+    let mut copies: Vec<PathBuf> = std::fs::read_dir(dir)?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with(&prefix) && n.to_string_lossy().ends_with(".csv")))
+        .collect();
+    copies.sort();
+    for old in copies.iter().rev().skip(keep.max(1)) {
+        let _ = std::fs::remove_file(old);
+    }
+    Ok(Some(dest))
+}
+
+#[tauri::command]
+fn backups_path(app: tauri::AppHandle) -> Result<String, String> {
+    backups_dir(&app).map(|p| p.to_string_lossy().into_owned())
+}
+
 #[tauri::command]
 fn file_mtime(path: String) -> Option<u64> {
     mtime_of(Path::new(&path))
@@ -269,6 +309,8 @@ pub fn run() {
             read_text,
             write_text,
             file_mtime,
+            backup_file,
+            backups_path,
             set_background_mode,
             quit_app,
             sync_snapshot,
@@ -286,4 +328,30 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running honeycomb");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backups_are_made_once_per_label_and_old_ones_go() {
+        let root = std::env::temp_dir().join(format!("honeycomb-backup-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let src = root.join("readings.csv");
+        let dir = root.join("backups");
+        std::fs::write(&src, "first").unwrap();
+        assert!(rotate_backup(&src, &dir, "2026-09-01", 3).unwrap().is_some());
+        std::fs::write(&src, "second").unwrap();
+        assert!(rotate_backup(&src, &dir, "2026-09-01", 3).unwrap().is_none());
+        assert_eq!(std::fs::read_to_string(dir.join("readings-2026-09-01.csv")).unwrap(), "first");
+        for day in ["2026-09-02", "2026-09-03", "2026-09-04"] {
+            rotate_backup(&src, &dir, day, 3).unwrap();
+        }
+        let mut names: Vec<String> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        names.sort();
+        assert_eq!(names, ["readings-2026-09-02.csv", "readings-2026-09-03.csv", "readings-2026-09-04.csv"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }
