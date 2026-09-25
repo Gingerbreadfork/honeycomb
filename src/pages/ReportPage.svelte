@@ -22,7 +22,7 @@
   const spanDays = $derived(resolved.spanDays);
   const rows = $derived(filterRange(app.readings, from, to));
   const stats = $derived(computeStats(rows, targets, spanDays));
-  const groups = $derived(groupByDay(rows).reverse());
+  const groups = $derived(groupByDay(rows));
   const newest = $derived(app.readings.length ? app.readings[app.readings.length - 1].time : null);
   const emptyButOlder = $derived(rows.length === 0 && newest !== null);
 
@@ -196,7 +196,7 @@
           </thead>
           <tbody>
             {#each groups as g (g.key)}
-              {#each [...g.readings].reverse() as r, i (r.id)}
+              {#each g.readings as r, i (r.id)}
                 {@const st = statusOf(r.mmol, targets)}
                 <tr class:first={i === 0}>
                   <td class="date">{i === 0 ? `${fmtWeekday(g.date)} ${fmtShortDate(g.date)}` : ''}</td>
