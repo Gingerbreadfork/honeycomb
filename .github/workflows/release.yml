@@ -83,18 +83,37 @@ jobs:
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
       - run: pnpm install --frozen-lockfile
-      - run: pnpm tauri build
-      - name: Checksums
+      - name: Build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            pnpm tauri build --config '{"bundle":{"createUpdaterArtifacts":true}}'
+          else
+            echo "TAURI_SIGNING_PRIVATE_KEY secret not set: this installer will not be able to update itself"
+            pnpm tauri build
+          fi
+      - name: Checksums and update feed
         run: |
           cd src-tauri/target/release/bundle/nsis
           sha256sum *-setup.exe | sed 's/ \*/  /' > ../SHA256SUMS-windows
+          exe=$(ls *-setup.exe)
+          if [ -f "$exe.sig" ]; then
+            jq -n --arg version "${GITHUB_REF_NAME#v}" --arg signature "$(cat "$exe.sig")" \
+              --arg url "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$exe" \
+              --arg notes "https://github.com/$GITHUB_REPOSITORY/releases/tag/$GITHUB_REF_NAME" \
+              --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              '{version: $version, notes: $notes, pub_date: $date, platforms: {"windows-x86_64": {signature: $signature, url: $url}}}' > latest.json
+          fi
       - name: Attach to release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Honeycomb ${GITHUB_REF_NAME#v}" --generate-notes 2>/dev/null || true
           uploaded=0
-          for f in src-tauri/target/release/bundle/nsis/*-setup.exe; do
+          for f in src-tauri/target/release/bundle/nsis/*-setup.exe src-tauri/target/release/bundle/nsis/*-setup.exe.sig src-tauri/target/release/bundle/nsis/latest.json; do
+            [ -f "$f" ] || continue
             if gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" "$f"; then uploaded=1; else echo "$(basename "$f") already on the release, keeping the published copy"; fi
           done
           [ "$uploaded" = 1 ] && gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" src-tauri/target/release/bundle/SHA256SUMS-windows || true
