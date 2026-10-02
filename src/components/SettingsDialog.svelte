@@ -2,6 +2,7 @@
   import { app, type Clock, type Theme } from '../lib/store.svelte';
   import { DEFAULT_TARGETS, formatValue, roundForUnit, targetsProblem, toMmol, type Unit, UNITS } from '../lib/glucose';
   import { backupsPath, isDesktop, pickSavePath, reveal } from '../lib/platform';
+  import { fileName } from '../lib/paths';
   import Dialog from './Dialog.svelte';
   import Icon from './Icon.svelte';
   import DevicesSection from './DevicesSection.svelte';
@@ -43,7 +44,7 @@
     const path = await pickSavePath(app.dataPath || 'readings.csv');
     if (!path) return;
     await app.updateSettings({ dataFile: path });
-    const name = path.split('/').pop();
+    const name = fileName(path) || path;
     app.toast(app.sync.configured ? `Now using ${name}. Paired devices will sync their readings into it.` : `Now using ${name}`);
   }
 

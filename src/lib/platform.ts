@@ -4,6 +4,7 @@ import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialo
 import { writeText as clipWrite } from '@tauri-apps/plugin-clipboard-manager';
 import { openUrl, revealItemInDir } from '@tauri-apps/plugin-opener';
 import { readTextFile } from '@tauri-apps/plugin-fs';
+import { fileName } from './paths';
 
 export type ResizeDirection = 'East' | 'North' | 'NorthEast' | 'NorthWest' | 'South' | 'SouthEast' | 'SouthWest' | 'West';
 
@@ -11,6 +12,7 @@ export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in
 /** Android or iOS build; the desktop build never sets this. */
 export const isMobile = isTauri && /Android|iPhone|iPad/i.test(navigator.userAgent);
 export const isDesktop = isTauri && !isMobile;
+export const isWindows = isDesktop && /Windows/.test(navigator.userAgent);
 
 export interface AppPaths {
   data_file: string;
@@ -69,7 +71,7 @@ export async function pickCsvText(): Promise<{ name: string; text: string } | nu
     const path = await pickCsvPath();
     if (!path) return null;
     const text = isMobile ? await readTextFile(path) : await readText(path);
-    const name = decodeURIComponent(path.split(/[/%]2F|\//).pop() ?? path).replace(/^.*:/, '') || 'file.csv';
+    const name = (isMobile ? decodeURIComponent(path.split(/[/%]2F|\//).pop() ?? path).replace(/^.*:/, '') : fileName(path)) || 'file.csv';
     return text === null ? null : { name, text };
   }
   return new Promise((resolve) => {
@@ -94,7 +96,7 @@ export async function exportFile(path: string, text: string): Promise<void> {
   }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
-  a.download = path.split('/').pop() ?? 'export.csv';
+  a.download = fileName(path) || 'export.csv';
   a.click();
   URL.revokeObjectURL(a.href);
 }

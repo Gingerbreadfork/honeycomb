@@ -1,6 +1,6 @@
 <script lang="ts">
   import { app } from '../lib/store.svelte';
-  import { isDesktop } from '../lib/platform';
+  import { isDesktop, isWindows } from '../lib/platform';
   import { fmtRelative } from '../lib/time';
   import Icon from './Icon.svelte';
   import PairPanel from './PairPanel.svelte';
@@ -76,7 +76,7 @@
         <input type="checkbox" checked={app.settings.background} onchange={(e) => app.updateSettings({ background: e.currentTarget.checked })} />
         <span>
           Keep syncing after the window is closed
-          <small>Honeycomb stays running quietly. Open it again from the app grid; Ctrl+Q quits fully.</small>
+          <small>Honeycomb stays running quietly. Open it again from the {isWindows ? 'Start menu' : 'app grid'}; Ctrl+Q quits fully.</small>
         </span>
       </label>
     {/if}
