@@ -233,7 +233,7 @@ pub type Shared = Arc<SyncEngine>;
 fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
     let tmp = path.with_extension("tmp");
     crate::write_new_private(&tmp, text)?;
-    std::fs::rename(&tmp, path)
+    crate::rename_over(&tmp, path)
 }
 
 fn now_ms() -> u64 {

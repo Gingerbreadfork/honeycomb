@@ -85,6 +85,20 @@ pub(crate) fn write_new_private(path: &Path, text: &str) -> std::io::Result<()> 
     options.open(path)?.write_all(text.as_bytes())
 }
 
+/// Renames over the target. Windows reports a file a scanner still has open as in use (errors 5
+/// and 32); those are retried for a short while.
+pub(crate) fn rename_over(from: &Path, to: &Path) -> std::io::Result<()> {
+    let mut delay = std::time::Duration::from_millis(10);
+    for _ in 0..6 {
+        match std::fs::rename(from, to) {
+            Err(e) if cfg!(windows) && matches!(e.raw_os_error(), Some(5) | Some(32)) => std::thread::sleep(delay),
+            result => return result,
+        }
+        delay *= 2;
+    }
+    std::fs::rename(from, to)
+}
+
 /// Writes to a sibling temp file, then renames over the target. A file that already exists keeps
 /// its permissions. Returns the new mtime.
 #[tauri::command]
@@ -102,7 +116,7 @@ fn write_text(path: String, text: String) -> Result<Option<u64>, String> {
     if let Ok(existing) = std::fs::metadata(&path) {
         let _ = std::fs::set_permissions(&tmp, existing.permissions());
     }
-    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    rename_over(&tmp, &path).map_err(|e| e.to_string())?;
     Ok(mtime_of(&path))
 }
 
