@@ -32,8 +32,11 @@
     "active": true,
     "targets": [
       "deb",
-      "rpm"
+      "rpm",
+      "nsis"
     ],
+    "publisher": "Honeycomb",
+    "homepage": "https://github.com/Gingerbreadfork/honeycomb",
     "category": "Healthcare and Fitness",
     "shortDescription": "A calm blood glucose journal",
     "longDescription": "Honeycomb is a fast, calm blood glucose journal. Readings are kept in a plain CSV file you own, with charts, statistics and a printable report for your doctor.",
@@ -50,6 +53,11 @@
       },
       "rpm": {
         "desktopTemplate": "honeycomb.desktop"
+      }
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
       }
     }
   }

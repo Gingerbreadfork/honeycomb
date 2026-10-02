@@ -66,6 +66,39 @@ jobs:
           # Checksums only make sense for the files this run actually published.
           [ "$uploaded" = 1 ] && gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" src-tauri/target/release/bundle/SHA256SUMS-linux || true
 
+  windows:
+    needs: verify
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm tauri build
+      - name: Checksums
+        run: |
+          cd src-tauri/target/release/bundle/nsis
+          sha256sum *-setup.exe | sed 's/ \*/  /' > ../SHA256SUMS-windows
+      - name: Attach to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Honeycomb ${GITHUB_REF_NAME#v}" --generate-notes 2>/dev/null || true
+          uploaded=0
+          for f in src-tauri/target/release/bundle/nsis/*-setup.exe; do
+            if gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" "$f"; then uploaded=1; else echo "$(basename "$f") already on the release, keeping the published copy"; fi
+          done
+          [ "$uploaded" = 1 ] && gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" src-tauri/target/release/bundle/SHA256SUMS-windows || true
+
   android:
     needs: verify
     runs-on: ubuntu-22.04
