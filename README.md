@@ -82,7 +82,9 @@ The Android package is signed with the project's own key, so the phone will ask 
 installing from this source.
 
 Settings, About has a Check for updates button. It asks GitHub for the latest version number and
-nothing else. Checking at startup is off until you turn it on.
+nothing else. Automatic checks, at startup and every twelve hours while the app runs, are off until
+you turn them on. On Windows a new version installs from inside the app with one click and
+Honeycomb restarts into it; on Linux and Android the button takes you to the release.
 
 ### From source
 
@@ -191,6 +193,14 @@ the version in `package.json`, `src-tauri/tauri.conf.json` and `src-tauri/Cargo.
 `./scripts/check-version.sh` tells you whether the three agree. The Android job also runs if the repository has two secrets:
 `ANDROID_KEYSTORE_BASE64` (the signing keystore, base64 encoded) and `ANDROID_KEYSTORE_PASS`.
 Without them, build the APK locally with `./android-build.sh` and upload it by hand.
+
+The Windows job signs the installer for in-app updates when the repository has a
+`TAURI_SIGNING_PRIVATE_KEY` secret holding the contents of `~/.config/honeycomb/updater.key`, and
+then publishes `latest.json`, the feed installed copies read. `pnpm tauri signer generate -w
+~/.config/honeycomb/updater.key` makes a key; its public half lives in `src-tauri/tauri.conf.json`,
+so a new key means installed copies have to be updated by hand once.
+`gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.config/honeycomb/updater.key` stores it. Without the
+secret the installer still builds but cannot update itself.
 
 `HONEYCOMB_PROFILE=name` runs a separate copy with its own data and no single-instance lock, which
 is handy for testing sync between two instances on one machine.
