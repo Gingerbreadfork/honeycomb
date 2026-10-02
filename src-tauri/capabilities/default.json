@@ -23,6 +23,8 @@
     "clipboard-manager:allow-write-text",
     "opener:allow-reveal-item-in-dir",
     "window-state:default",
+    "updater:default",
+    "process:allow-restart",
     "fs:allow-read-text-file",
     "fs:allow-write-text-file",
     "opener:allow-open-url",

@@ -1,6 +1,20 @@
 import { parseReadings, readingsToCsv, newId, type ColumnChoice } from './csv';
 import { DEFAULT_TARGETS, type Context, type Reading, type Targets, type Unit } from './glucose';
-import { appPaths, backupFile, fileMtime, quitApp, readText, setBackgroundMode, writeText, win, isTauri, type AppPaths } from './platform';
+import {
+  appPaths,
+  backupFile,
+  canSelfUpdate,
+  fileMtime,
+  installUpdate,
+  quitApp,
+  readText,
+  setBackgroundMode,
+  writeText,
+  win,
+  isTauri,
+  type AppPaths,
+  type UpdateProgress,
+} from './platform';
 import { SyncState } from './sync.svelte';
 import { planImport, type ImportPlan } from './import';
 import { mergeSynced } from './merge';
@@ -98,6 +112,8 @@ export class Store {
   lastSaved = $state<Reading | null>(null);
   /** A release newer than this build, once a check has found one. */
   newRelease = $state<Release | null>(null);
+  /** Download progress while a new version is being installed. */
+  updating = $state<UpdateProgress | null>(null);
 
   paths = $state<AppPaths | null>(null);
   dataPath = $derived(this.settings.dataFile ?? this.paths?.data_file ?? '');
@@ -148,7 +164,8 @@ export class Store {
       return false;
     }
     if (this.newRelease?.version !== latest.version) {
-      this.toast(`Honeycomb ${latest.version} is out`, { label: 'See it', run: () => void openLink(latest.url) });
+      const action = canSelfUpdate ? { label: 'Install', run: () => void this.installUpdate() } : { label: 'See it', run: () => void openLink(latest.url) };
+      this.toast(`Honeycomb ${latest.version} is out`, action);
     }
     this.newRelease = latest;
     return true;
@@ -158,6 +175,23 @@ export class Store {
   private async checkForUpdateQuietly(): Promise<void> {
     if (!this.settings.checkUpdates || Date.now() - this.lastUpdateCheck < UPDATE_CHECK_EVERY) return;
     await this.checkForUpdate().catch(() => {});
+  }
+
+  /** Fetches the new installer and hands over to it. Points at the release page instead when that is not possible. */
+  async installUpdate(): Promise<void> {
+    if (this.updating) return;
+    const release = this.newRelease;
+    const seeIt = release ? { label: 'See it', run: () => void openLink(release.url) } : undefined;
+    this.updating = { downloaded: 0, total: null };
+    try {
+      if (!(await installUpdate((p) => (this.updating = p)))) {
+        this.toast("The update isn't ready to install yet. Try again later, or get it from the release page.", seeIt);
+      }
+    } catch (e) {
+      this.toast(`Update failed: ${String(e)}`, seeIt);
+    } finally {
+      this.updating = null;
+    }
   }
 
   /** Folds the sync engine's rows into local rows and writes the result to disk. */

@@ -28,6 +28,8 @@ vi.mock('./platform', () => ({
   backupFile: (...args: unknown[]) => backupFile(...args),
   setBackgroundMode: async () => {},
   quitApp: async () => {},
+  canSelfUpdate: false,
+  installUpdate: async () => false,
   pickCsvText: async () => null,
   openLink: async () => {},
   win: { isMaximized: async () => false, onResized: async () => () => {}, close: async () => {} },

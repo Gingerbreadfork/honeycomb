@@ -48,8 +48,15 @@
       </button>
     {/if}
     {#if !isMobile}
-      <button type="button" class="icon-btn" title="Settings (Ctrl+,)" aria-label="Settings" onclick={() => (app.settingsOpen = true)}>
+      <button
+        type="button"
+        class="icon-btn"
+        title={app.newRelease ? `Settings (Ctrl+,) · Honeycomb ${app.newRelease.version} is out` : 'Settings (Ctrl+,)'}
+        aria-label="Settings"
+        onclick={() => (app.settingsOpen = true)}
+      >
         <Icon name="gear" />
+        {#if app.newRelease}<span class="state"></span>{/if}
       </button>
     {/if}
     {#if isDesktop}
@@ -112,6 +119,7 @@
     height: 100%;
   }
   .icon-btn {
+    position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -123,9 +131,6 @@
   .icon-btn:hover {
     background: var(--card-2);
     color: var(--ink);
-  }
-  .sync {
-    position: relative;
   }
   .state {
     position: absolute;

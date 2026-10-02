@@ -60,5 +60,16 @@
         "installMode": "currentUser"
       }
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlBNTcwN0I0NTEyMzQ5RTAKUldUZ1NTTlJ0QWRYbXI2ckc4OXN1Zml5cXJtR1lsUHk1YlZXS2JWM0poSlUvSkJYZ3cvdDVGVWkK",
+      "endpoints": [
+        "https://github.com/Gingerbreadfork/honeycomb/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

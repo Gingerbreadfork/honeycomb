@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { openLink } from '../lib/platform';
+  import { canSelfUpdate, openLink, type UpdateProgress } from '../lib/platform';
   import { app } from '../lib/store.svelte';
 
   const repo = 'https://github.com/Gingerbreadfork/honeycomb';
@@ -10,6 +10,12 @@
 
   function go(url: string): void {
     openLink(url).catch((e) => app.toast(`Couldn't open the link: ${String(e)}`));
+  }
+
+  function progressText(p: UpdateProgress): string {
+    const mb = (n: number) => (n / 1048576).toFixed(1);
+    if (p.total && p.downloaded >= p.total) return 'Installing…';
+    return p.total ? `Downloading… ${mb(p.downloaded)} of ${mb(p.total)} MB` : `Downloading… ${mb(p.downloaded)} MB`;
   }
 
   async function check(): Promise<void> {
@@ -44,9 +50,16 @@
   <div class="updates">
     <div class="links">
       <button type="button" class="btn small" onclick={check} disabled={checking}>{checking ? 'Checking…' : 'Check for updates'}</button>
-      {#if app.newRelease}
+      {#if app.updating}
+        {@const progress = app.updating}
+        <span class="fine" role="status">{progressText(progress)}</span>
+      {:else if app.newRelease}
         {@const found = app.newRelease}
-        <button type="button" class="btn small primary" onclick={() => go(found.url)}>Get {found.version}</button>
+        {#if canSelfUpdate}
+          <button type="button" class="btn small primary" onclick={() => app.installUpdate()}>Install {found.version} and restart</button>
+        {:else}
+          <button type="button" class="btn small primary" onclick={() => go(found.url)}>Get {found.version}</button>
+        {/if}
       {:else if checked}
         <span class="fine" role="status">{checked}</span>
       {/if}
@@ -55,7 +68,10 @@
       <input type="checkbox" checked={app.settings.checkUpdates} onchange={(e) => app.updateSettings({ checkUpdates: e.currentTarget.checked })} />
       <span>
         Check for updates on its own
-        <small>When Honeycomb starts and every twelve hours while it runs. Asks GitHub for the latest version number; nothing about you or your readings is sent.</small>
+        <small>
+          When Honeycomb starts and every twelve hours while it runs. Asks GitHub for the latest version number; nothing about you or your
+          readings is sent.{canSelfUpdate ? ' Nothing installs until you say so.' : ''}
+        </small>
       </span>
     </label>
   </div>

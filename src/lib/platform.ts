@@ -167,6 +167,37 @@ export async function quitApp(): Promise<void> {
   if (isTauri) await invoke('quit_app');
 }
 
+/** True where the app can fetch a release and install it over itself, which the Windows installer supports. */
+export const canSelfUpdate = isWindows;
+
+export interface UpdateProgress {
+  downloaded: number;
+  total: number | null;
+}
+
+/**
+ * Downloads the signed installer for the newest release and hands over to it. The app closes while
+ * the installer runs and is started again afterwards. Resolves false when the feed has nothing newer.
+ */
+export async function installUpdate(onProgress: (p: UpdateProgress) => void): Promise<boolean> {
+  if (!canSelfUpdate) return false;
+  const { check } = await import('@tauri-apps/plugin-updater');
+  const update = await check();
+  if (!update) return false;
+  const progress: UpdateProgress = { downloaded: 0, total: null };
+  await update.downloadAndInstall(
+    (e) => {
+      if (e.event === 'Started') progress.total = e.data.contentLength ?? null;
+      else if (e.event === 'Progress') progress.downloaded += e.data.chunkLength;
+      onProgress({ ...progress });
+    },
+    { restartAfterInstall: true },
+  );
+  const { relaunch } = await import('@tauri-apps/plugin-process');
+  await relaunch();
+  return true;
+}
+
 export const win = {
   minimize: () => (isDesktop ? getCurrentWindow().minimize() : Promise.resolve()),
   toggleMaximize: () => (isDesktop ? getCurrentWindow().toggleMaximize() : Promise.resolve()),
