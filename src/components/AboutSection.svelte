@@ -54,8 +54,8 @@
     <label class="toggle">
       <input type="checkbox" checked={app.settings.checkUpdates} onchange={(e) => app.updateSettings({ checkUpdates: e.currentTarget.checked })} />
       <span>
-        Check when Honeycomb starts
-        <small>Asks GitHub for the latest version number. Nothing about you or your readings is sent.</small>
+        Check for updates on its own
+        <small>When Honeycomb starts and every twelve hours while it runs. Asks GitHub for the latest version number; nothing about you or your readings is sent.</small>
       </span>
     </label>
   </div>

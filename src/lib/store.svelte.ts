@@ -14,6 +14,9 @@ export type Page = 'log' | 'trends' | 'report';
 export type Theme = 'system' | 'light' | 'dark';
 export type Clock = 'system' | '12h' | '24h';
 
+/** How often the automatic update check runs while Honeycomb is open. */
+const UPDATE_CHECK_EVERY = 12 * 60 * 60 * 1000;
+
 export interface Settings {
   unit: Unit;
   targets: Targets;
@@ -100,6 +103,7 @@ export class Store {
   dataPath = $derived(this.settings.dataFile ?? this.paths?.data_file ?? '');
 
   private fileMtime: number | null = null;
+  private lastUpdateCheck = 0;
   private writtenIds = new Set<string>();
   private backedUp = '';
   private toastSeq = 0;
@@ -123,6 +127,7 @@ export class Store {
     window.addEventListener('focus', () => {
       void this.checkExternalChange();
       this.sync.syncNow();
+      void this.checkForUpdateQuietly();
     });
     void setBackgroundMode(this.settings.background);
     this.sync.onRows = (rows) => this.applySynced(rows);
@@ -130,12 +135,14 @@ export class Store {
     this.sync.onPaired = (device) => this.toast(`Paired with ${device.name}`);
     await this.sync.init();
     this.sync.push(this.rows);
-    if (this.settings.checkUpdates) void this.checkForUpdate().catch(() => {});
+    void this.checkForUpdateQuietly();
+    setInterval(() => void this.checkForUpdateQuietly(), 60 * 60 * 1000);
   }
 
   /** Returns true when a newer release exists. Announces it with a toast the first time. */
   async checkForUpdate(): Promise<boolean> {
     const latest = await latestRelease();
+    this.lastUpdateCheck = Date.now();
     if (!isNewer(latest.version, __APP_VERSION__)) {
       this.newRelease = null;
       return false;
@@ -145,6 +152,12 @@ export class Store {
     }
     this.newRelease = latest;
     return true;
+  }
+
+  /** The automatic check: when turned on, once at startup and then every twelve hours while Honeycomb runs. */
+  private async checkForUpdateQuietly(): Promise<void> {
+    if (!this.settings.checkUpdates || Date.now() - this.lastUpdateCheck < UPDATE_CHECK_EVERY) return;
+    await this.checkForUpdate().catch(() => {});
   }
 
   /** Folds the sync engine's rows into local rows and writes the result to disk. */
