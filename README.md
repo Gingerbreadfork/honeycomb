@@ -5,7 +5,7 @@
 <h1 align="center">Honeycomb</h1>
 
 <p align="center">
-  A calm blood glucose journal for Linux and Android.<br>
+  A calm blood glucose journal for Linux, Windows and Android.<br>
   Log a reading in seconds, watch the trends, hand your doctor a clean report,<br>
   and keep every device in step with no account and no server.
 </p>
@@ -40,8 +40,9 @@ you own.
 - **A report for your doctor.** A printable sheet with the summary figures, chart, and a table of
   every reading. Save it as a PDF, export or share a CSV, or copy a plain-text summary, on the
   computer or the phone.
-- **Your data stays yours.** Readings are stored as CSV in `~/.local/share/honeycomb/readings.csv`.
-  Point the app at a different file if you prefer, or import an export on a new machine.
+- **Your data stays yours.** Readings are stored as CSV in `~/.local/share/honeycomb/readings.csv`
+  on Linux and `%APPDATA%\honeycomb\readings.csv` on Windows. Point the app at a different file if
+  you prefer, or import an export on a new machine.
 - **Sync between devices, no account needed.** Pair two computers, or a computer and a phone, and
   they keep the same readings. Devices talk to each other directly with end-to-end encryption.
   A device that was off simply catches up the next time both are running.
@@ -61,14 +62,21 @@ you own.
 ## Install
 
 Packages for each release are on the [Releases page](https://github.com/Gingerbreadfork/honeycomb/releases):
-an `.rpm` for Fedora and friends, a `.deb` for Ubuntu and Debian, and an `.apk` for arm64 Android
-phones, with a `SHA256SUMS` file alongside.
+an `.rpm` for Fedora and friends, a `.deb` for Ubuntu and Debian, a `-setup.exe` installer for
+64-bit Windows 10 and 11, and an `.apk` for arm64 Android phones, with a `SHA256SUMS` file alongside.
 
 ```sh
 sudo dnf install ./Honeycomb-<version>.x86_64.rpm     # Fedora
 sudo apt install ./Honeycomb_<version>_amd64.deb      # Ubuntu, Debian
 adb install Honeycomb-<version>-arm64.apk             # Android, or copy the file to the phone
 ```
+
+On Windows, run `Honeycomb_<version>_x64-setup.exe`. It installs for your user only, with no
+administrator prompt, and adds Honeycomb to the Start menu. The installer carries no paid code
+signing certificate, so SmartScreen may say the publisher is unknown: choose More info, then Run
+anyway. The first time sync starts, Windows Firewall asks whether Honeycomb may accept connections;
+allow it on private networks so devices on the same Wi-Fi can find each other. Sync through the
+relay works either way.
 
 The Android package is signed with the project's own key, so the phone will ask you to allow
 installing from this source.
@@ -94,6 +102,12 @@ launcher entry). No root needed. For system packages instead:
 pnpm install
 pnpm tauri build          # writes .rpm and .deb to src-tauri/target/release/bundle/
 ```
+
+On Windows you need the same Node, pnpm and Rust, plus the Visual Studio Build Tools with the
+"Desktop development with C++" workload, as the
+[Tauri prerequisites](https://v2.tauri.app/start/prerequisites/#windows) describe. WebView2 is
+part of Windows 10 and 11. The same two commands then write the installer to
+`src-tauri\target\release\bundle\nsis\`, and `pnpm tauri dev` works as on Linux.
 
 ## Android
 
@@ -153,8 +167,9 @@ Before the first change on any day, the file as it stood is copied to
 `~/.local/share/honeycomb/backups/readings-<date>.csv`. The last 14 are kept. To go back to one,
 quit the app and copy it over `readings.csv`, or import it to bring back only what is missing.
 
-Settings live in `~/.config/honeycomb/settings.json`. Edits made to the data file outside the app
-are picked up the next time the window gains focus.
+Settings live in `~/.config/honeycomb/settings.json`. On Windows everything sits together under
+`%APPDATA%\honeycomb`: `readings.csv`, `settings.json`, and the `backups` folder. Edits made to the
+data file outside the app are picked up the next time the window gains focus.
 
 ## Develop
 
@@ -171,8 +186,8 @@ pnpm tauri android dev    # run on a connected device or emulator
 ### Releasing
 
 Pushing a tag like `v0.2.0` runs the release workflow, which runs the tests, builds the Linux
-packages and attaches them to a GitHub release. The tag has to match the version in
-`package.json`, `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml`;
+packages and the Windows installer, and attaches them to a GitHub release. The tag has to match
+the version in `package.json`, `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml`;
 `./scripts/check-version.sh` tells you whether the three agree. The Android job also runs if the repository has two secrets:
 `ANDROID_KEYSTORE_BASE64` (the signing keystore, base64 encoded) and `ANDROID_KEYSTORE_PASS`.
 Without them, build the APK locally with `./android-build.sh` and upload it by hand.
