@@ -134,6 +134,36 @@ export function tirBuckets(readings: Reading[], targets: Targets, from: Date, to
   return buckets;
 }
 
+export interface DayAverage {
+  start: Date;
+  mean: number | null;
+  count: number;
+  min: number | null;
+  max: number | null;
+}
+
+/** One entry per day of the span, oldest first. A day without readings has a null mean. */
+export function dailyAverages(readings: Reading[], from: Date, to: Date): DayAverage[] {
+  const days: DayAverage[] = [];
+  const slots = new Map<string, { day: DayAverage; sum: number }>();
+  for (let d = startOfDay(from); d < to; d = addDays(d, 1)) {
+    const day: DayAverage = { start: d, mean: null, count: 0, min: null, max: null };
+    days.push(day);
+    slots.set(dayKey(d), { day, sum: 0 });
+  }
+  for (const r of readings) {
+    const slot = slots.get(dayKey(r.time));
+    if (!slot) continue;
+    const { day } = slot;
+    slot.sum += r.mmol;
+    day.count++;
+    day.mean = slot.sum / day.count;
+    day.min = day.min === null ? r.mmol : Math.min(day.min, r.mmol);
+    day.max = day.max === null ? r.mmol : Math.max(day.max, r.mmol);
+  }
+  return days;
+}
+
 export function median(values: number[]): number | null {
   if (!values.length) return null;
   const s = [...values].sort((a, b) => a - b);

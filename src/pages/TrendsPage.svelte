@@ -1,9 +1,10 @@
 <script lang="ts">
   import { app } from '../lib/store.svelte';
   import { formatSigned, formatValue } from '../lib/glucose';
-  import { computeStats, filterRange, tirBuckets } from '../lib/stats';
+  import { computeStats, dailyAverages, filterRange, tirBuckets } from '../lib/stats';
   import { addDays, fmtDateTime, fmtLongDate, fmtRange } from '../lib/time';
   import ReadingsChart from '../components/charts/ReadingsChart.svelte';
+import DailyAverageChart from '../components/charts/DailyAverageChart.svelte';
   import DayPatternChart from '../components/charts/DayPatternChart.svelte';
   import RangeBar from '../components/charts/RangeBar.svelte';
   import RangeColumns from '../components/charts/RangeColumns.svelte';
@@ -26,6 +27,7 @@
   const prev = $derived(computeStats(previous, targets, spanDays));
   const byWeek = $derived(spanDays > 21);
   const buckets = $derived(tirBuckets(current, targets, from, to, byWeek));
+  const daily = $derived(dailyAverages(current, from, to));
 
   const prevLabel = $derived(range.custom ? `vs previous ${spanDays} days` : days ? `vs previous ${days} days` : '');
   const avgDelta = $derived(
@@ -105,6 +107,12 @@
     <section>
       <h3 class="display">Readings</h3>
       <ReadingsChart readings={current} {from} {to} {targets} {unit} height={260} />
+    </section>
+
+    <section>
+      <h3 class="display">Daily average</h3>
+      <p class="muted">Each day's readings averaged into one point. A dotted stretch bridges days with no readings.</p>
+      <DailyAverageChart days={daily} {from} {to} {targets} {unit} height={240} />
     </section>
 
     <section>
