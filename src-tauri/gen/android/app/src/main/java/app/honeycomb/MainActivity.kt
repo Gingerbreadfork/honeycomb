@@ -18,8 +18,6 @@ class MainActivity : TauriActivity() {
   override val handleBackNavigation: Boolean = false
   private var web: WebView? = null
 
-  private external fun initAndroidContext(activity: android.app.Activity)
-
   override fun onWebViewCreate(webView: WebView) {
     web = webView
     webView.addJavascriptInterface(Bridge(), "HoneycombAndroid")
@@ -57,11 +55,6 @@ class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
-    try {
-      initAndroidContext(this)
-    } catch (e: Throwable) {
-      android.util.Log.w("honeycomb", "Android context init failed", e)
-    }
     // Back closes whatever the page has open; when nothing is open the app goes to the background.
     onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
       override fun handleOnBackPressed() {

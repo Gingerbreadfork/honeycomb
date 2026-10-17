@@ -257,24 +257,6 @@ fn sync_set_device_name(state: State<'_, SyncHandle>, name: String) -> Result<()
     Ok(())
 }
 
-/// Called once from MainActivity so crates that need the Android context (DNS, network watching) can find it.
-#[cfg(target_os = "android")]
-#[no_mangle]
-pub extern "system" fn Java_app_honeycomb_MainActivity_initAndroidContext(
-    env: jni::JNIEnv,
-    _class: jni::objects::JObject,
-    activity: jni::objects::JObject,
-) {
-    static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(|| {
-        if let (Ok(vm), Ok(global)) = (env.get_java_vm(), env.new_global_ref(&activity)) {
-            let context = global.as_raw() as *mut std::ffi::c_void;
-            std::mem::forget(global);
-            unsafe { ndk_context::initialize_android_context(vm.get_java_vm_pointer() as *mut std::ffi::c_void, context) };
-        }
-    });
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "android")]
