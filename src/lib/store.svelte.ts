@@ -261,13 +261,19 @@ export class Store {
     const path = mode === 'external' ? this.rowsFile : this.dataPath;
     try {
       const text = await readText(path);
+      if (mode === 'external' && text === null) {
+        // A file that vanished, often only for a moment under a sync tool, is written back instead of emptying the list.
+        this.fileMtime = null;
+        void this.persist(false);
+        return;
+      }
       const mtime = await fileMtime(path);
       const parsed = text ? parseReadings(text, this.settings.unit) : { readings: [], skipped: 0 };
       const unique = dedupeIds(parsed.readings);
       const current = dropExpiredTombstones(unique.rows);
       let rows = current.rows;
       let rewrite = unique.changed || current.changed;
-      if (mode === 'external' && text !== null) {
+      if (mode === 'external') {
         const edit = reconcileExternal(this.rows, rows, this.writtenIds, parsed.skipped === 0);
         rows = edit.rows;
         rewrite = true;

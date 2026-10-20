@@ -119,6 +119,16 @@ describe('Store', () => {
     expect(onDisk()).toMatch(/,c,[^,]+,\d{4}-/);
   });
 
+  it('writes the readings back when the file goes missing instead of emptying the list', async () => {
+    const { store } = await openStore([line('a', 8, '6.4'), line('b', 12, '7.1')]);
+    files.delete(DATA);
+    await inside(store).checkExternalChange();
+    await inside(store).queue;
+    expect(store.readings.map((r) => r.id)).toEqual(['a', 'b']);
+    expect(onDisk()).toContain(',a,');
+    expect(onDisk()).toContain(',b,');
+  });
+
   it("does not mistake the app's own save for an outside edit", async () => {
     const { store } = await openStore([line('a', 8, '6.4')]);
     store.add(typed);
