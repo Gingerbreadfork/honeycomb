@@ -223,6 +223,8 @@ pub struct SyncEngine {
     endpoint: Endpoint,
     dir: PathBuf,
     inner: Arc<Mutex<Inner>>,
+    /// Held while devices.json is written, so two saves never share the temp file.
+    saving: Mutex<()>,
     wake: Arc<Notify>,
     full_exchanges: std::sync::atomic::AtomicUsize,
 }
@@ -494,6 +496,7 @@ impl SyncEngine {
                 next_request: 1,
                 ready: false,
             })),
+            saving: Mutex::new(()),
             wake: Arc::new(Notify::new()),
             full_exchanges: Default::default(),
         });
@@ -566,6 +569,7 @@ impl SyncEngine {
     }
 
     fn save(&self) {
+        let _saving = self.saving.lock().unwrap();
         let (device_name, peers) = {
             let g = self.inner.lock().unwrap();
             (g.device_name.clone(), g.peers.clone())
