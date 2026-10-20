@@ -300,13 +300,19 @@ export class Store {
   /** Runs after any queued writes, so the app's own saves are never mistaken for outside edits. */
   private checkExternalChange(): Promise<void> {
     this.queue = this.queue.then(async () => {
-      if (!this.ready || !this.rowsFile) return;
-      const m = await fileMtime(this.rowsFile);
-      if (m === this.fileMtime) return;
-      await this.loadReadings('external');
-      if (m !== null) this.toast('Readings reloaded from file');
+      if (this.ready) await this.reloadIfChanged();
     });
     return this.queue;
+  }
+
+  /** Folds in the file when something else changed it since the app last read or wrote it. Runs inside the queue. */
+  private async reloadIfChanged(): Promise<boolean> {
+    if (!this.rowsFile) return false;
+    const m = await fileMtime(this.rowsFile);
+    if (m === this.fileMtime) return false;
+    await this.loadReadings('external');
+    if (m !== null) this.toast('Readings reloaded from file');
+    return true;
   }
 
   private persist(push = true): Promise<void> {
@@ -317,6 +323,8 @@ export class Store {
     if (push) this.sync.push(snapshot);
     this.queue = this.queue.then(async () => {
       try {
+        // The reload saves the merged readings itself.
+        if (file === this.rowsFile && (await this.reloadIfChanged())) return;
         await this.backupOncePerDay(file);
         const mtime = await writeText(file, readingsToCsv(snapshot));
         if (file !== this.rowsFile) return;

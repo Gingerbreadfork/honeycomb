@@ -129,6 +129,18 @@ describe('Store', () => {
     expect(onDisk()).toContain(',b,');
   });
 
+  it('keeps a hand edit made while the window was hidden when a pull is saved', async () => {
+    const { store } = await openStore([line('a', 8, '6.4'), line('b', 12, '7.1')]);
+    put(DATA, fileOf([line('a', 8, '6.4'), line('b', 12, '9.9')]));
+    inside(store).applySynced([...store.rows, fromPhone('from-phone', 5)]);
+    await inside(store).queue;
+    await inside(store).queue;
+    expect(store.rows.find((r) => r.id === 'b')!.mmol).toBeCloseTo(9.9);
+    expect(store.readings.map((r) => r.id).sort()).toEqual(['a', 'b', 'from-phone']);
+    expect(onDisk()).toMatch(/,9\.9,mmol\/L,,,b,/);
+    expect(onDisk()).toContain('from-phone');
+  });
+
   it("does not mistake the app's own save for an outside edit", async () => {
     const { store } = await openStore([line('a', 8, '6.4')]);
     store.add(typed);
