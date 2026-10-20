@@ -27,6 +27,14 @@ describe('csv', () => {
     expect(back[1].updated).toBe(1000);
   });
 
+  it('reads values to the precision the file is saved with', () => {
+    const text = 'time,glucose,unit\n2026-09-15T08:42:00+10:00,6.44,mmol/L\n2026-09-15T09:42:00+10:00,6.35,mmol/L\n2026-09-15T10:42:00+10:00,110.6,mg/dL\n';
+    const first = readingsFromCsv(text, 'mmol/L');
+    expect(first.map((r) => r.mmol)).toEqual([6.4, 6.4, 111 / 18.0182]);
+    const again = readingsFromCsv(readingsToCsv(first), 'mmol/L');
+    expect(again.map((r) => r.mmol)).toEqual(first.map((r) => r.mmol));
+  });
+
   it('keeps sync stamps to the millisecond and still reads whole-second files', () => {
     const stamp = 1789925573216;
     const reading = { id: 'a', time: new Date(stamp), mmol: 5.5, unit: 'mmol/L' as const, context: '' as const, note: '', updated: stamp, deleted: stamp + 7 };

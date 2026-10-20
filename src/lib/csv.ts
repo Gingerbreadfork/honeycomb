@@ -1,4 +1,4 @@
-import { normalizeContext, type Reading, type Unit } from './glucose';
+import { normalizeContext, roundForUnit, toMmol, type Reading, type Unit } from './glucose';
 import { detectDayOrder, instantMs, localeDayOrder, parseStamp, parseTime, toLocalIso } from './time';
 
 export function parseCsv(text: string): string[][] {
@@ -201,7 +201,8 @@ export function parseReadings(text: string, fallbackUnit: Unit, choice: ColumnCh
       (unitCol >= 0 ? unitFrom(r[unitCol] ?? '') : null) ??
       unitFrom(headers[glucoseCol]) ??
       (value > 35 ? 'mg/dL' : fallbackUnit);
-    const mmol = unit === 'mmol/L' ? value : value / 18.0182;
+    // Kept to the precision the file is written with, so a reading reads back the same after a save.
+    const mmol = toMmol(roundForUnit(value, unit), unit);
     const context = normalizeContext(contextCol >= 0 ? (r[contextCol] ?? '') : '');
     const note = noteCol >= 0 ? (r[noteCol] ?? '').trim() : '';
     const taken = instantMs(time, offset);
