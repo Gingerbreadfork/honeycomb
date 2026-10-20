@@ -10,14 +10,18 @@
 
   const unit = app.settings.unit;
   // svelte-ignore state_referenced_locally
-  const shown = { text: formatValue(reading.mmol, unit), date: dateInputValue(reading.time), time: timeInputValue(reading.time) };
+  const shown = {
+    text: formatValue(reading.mmol, unit),
+    date: dateInputValue(reading.time),
+    time: timeInputValue(reading.time),
+    context: reading.context,
+    note: reading.note,
+  };
   let text = $state(shown.text);
   let date = $state(shown.date);
   let time = $state(shown.time);
-  // svelte-ignore state_referenced_locally
-  let context = $state<Context>(reading.context);
-  // svelte-ignore state_referenced_locally
-  let note = $state(reading.note);
+  let context = $state<Context>(shown.context);
+  let note = $state(shown.note);
 
   const mmol = $derived(parseInput(text, unit));
   const hint = $derived(inputHint(text, unit));
@@ -28,10 +32,12 @@
 
   function save(): void {
     if (mmol === null || !when || future) return;
-    // Untouched fields keep their stored value rather than the rounded one on screen.
+    // Only fields changed here are written, so the rest keep their stored value and any edit synced in meanwhile.
     const value = text.trim() === shown.text ? {} : { mmol, unit };
     const at = date === shown.date && time === shown.time ? {} : { time: when };
-    app.update(reading.id, { ...value, ...at, context, note: note.trim() });
+    const ctx = context === shown.context ? {} : { context };
+    const memo = note.trim() === shown.note ? {} : { note: note.trim() };
+    app.update(reading.id, { ...value, ...at, ...ctx, ...memo });
     onclose();
     app.toast('Reading updated');
   }
