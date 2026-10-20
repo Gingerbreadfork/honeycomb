@@ -73,7 +73,7 @@ fn read_text(path: String) -> Result<Option<String>, String> {
 }
 
 /// A new file is readable only by the user; readings are health data.
-pub(crate) fn write_new_private(path: &Path, text: &str) -> std::io::Result<()> {
+pub(crate) fn write_new_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
@@ -82,7 +82,7 @@ pub(crate) fn write_new_private(path: &Path, text: &str) -> std::io::Result<()> 
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    options.open(path)?.write_all(text.as_bytes())
+    options.open(path)?.write_all(bytes)
 }
 
 /// Renames over the target. Windows reports a file a scanner still has open as in use (errors 5
@@ -112,7 +112,7 @@ fn write_text(path: String, text: String) -> Result<Option<u64>, String> {
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| "file".into());
     let tmp = path.with_file_name(format!(".{name}.tmp"));
-    write_new_private(&tmp, &text).map_err(|e| e.to_string())?;
+    write_new_private(&tmp, text.as_bytes()).map_err(|e| e.to_string())?;
     // Windows only has the read-only flag, which would leave a temp file the next save can't open.
     #[cfg(unix)]
     if let Ok(existing) = std::fs::metadata(&path) {
@@ -144,7 +144,7 @@ fn rotate_backup(src: &Path, dir: &Path, label: &str, keep: usize) -> std::io::R
         return Ok(None);
     }
     std::fs::create_dir_all(dir)?;
-    write_new_private(&dest, &String::from_utf8_lossy(&std::fs::read(src)?))?;
+    write_new_private(&dest, &std::fs::read(src)?)?;
     let prefix = format!("{stem}-");
     let mut copies: Vec<PathBuf> = std::fs::read_dir(dir)?
         .filter_map(|e| e.ok().map(|e| e.path()))
@@ -357,6 +357,19 @@ mod tests {
         let mut names: Vec<String> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
         names.sort();
         assert_eq!(names, ["readings-2026-09-02.csv", "readings-2026-09-03.csv", "readings-2026-09-04.csv"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn backups_copy_the_file_byte_for_byte() {
+        let root = std::env::temp_dir().join(format!("honeycomb-backup-bytes-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let src = root.join("readings.csv");
+        let bytes = b"time,glucose,note\n2026-09-01T08:00,6.4,caf\xe9\n";
+        std::fs::write(&src, bytes).unwrap();
+        let made = rotate_backup(&src, &root.join("backups"), "2026-09-01", 3).unwrap().unwrap();
+        assert_eq!(std::fs::read(made).unwrap(), bytes);
         let _ = std::fs::remove_dir_all(&root);
     }
 }

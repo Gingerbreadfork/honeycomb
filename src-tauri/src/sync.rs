@@ -234,7 +234,7 @@ pub type Shared = Arc<SyncEngine>;
 /// Writes through a temp file readable only by the user, then renames it into place.
 fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
     let tmp = path.with_extension("tmp");
-    crate::write_new_private(&tmp, text)?;
+    crate::write_new_private(&tmp, text.as_bytes())?;
     crate::rename_over(&tmp, path)
 }
 
