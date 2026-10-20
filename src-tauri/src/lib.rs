@@ -99,8 +99,8 @@ pub(crate) fn rename_over(from: &Path, to: &Path) -> std::io::Result<()> {
     std::fs::rename(from, to)
 }
 
-/// Writes to a sibling temp file, then renames over the target. A file that already exists keeps
-/// its permissions. Returns the new mtime.
+/// Writes to a sibling temp file, then renames over the target. On Unix a file that already exists
+/// keeps its permissions. Returns the new mtime.
 #[tauri::command]
 fn write_text(path: String, text: String) -> Result<Option<u64>, String> {
     let path = PathBuf::from(path);
@@ -113,6 +113,8 @@ fn write_text(path: String, text: String) -> Result<Option<u64>, String> {
         .unwrap_or_else(|| "file".into());
     let tmp = path.with_file_name(format!(".{name}.tmp"));
     write_new_private(&tmp, &text).map_err(|e| e.to_string())?;
+    // Windows only has the read-only flag, which would leave a temp file the next save can't open.
+    #[cfg(unix)]
     if let Ok(existing) = std::fs::metadata(&path) {
         let _ = std::fs::set_permissions(&tmp, existing.permissions());
     }
