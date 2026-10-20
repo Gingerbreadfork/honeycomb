@@ -14,6 +14,7 @@
     text: formatValue(reading.mmol, unit),
     date: dateInputValue(reading.time),
     time: timeInputValue(reading.time),
+    mmol: reading.mmol,
     context: reading.context,
     note: reading.note,
   };
@@ -23,7 +24,9 @@
   let context = $state<Context>(shown.context);
   let note = $state(shown.note);
 
-  const mmol = $derived(parseInput(text, unit));
+  // An untouched value stays valid even when its rounded form on screen is outside what a meter reads.
+  const keptValue = $derived(text.trim() === shown.text);
+  const mmol = $derived(keptValue ? shown.mmol : parseInput(text, unit));
   const hint = $derived(inputHint(text, unit));
   const when = $derived(fromInputs(date, time));
   const future = $derived(when !== null && isFuture(new Date(instantMs(when, reading.offset)), app.now));
@@ -33,7 +36,7 @@
   function save(): void {
     if (mmol === null || !when || future) return;
     // Only fields changed here are written, so the rest keep their stored value and any edit synced in meanwhile.
-    const value = text.trim() === shown.text ? {} : { mmol, unit };
+    const value = keptValue ? {} : { mmol, unit };
     const at = date === shown.date && time === shown.time ? {} : { time: when };
     const ctx = context === shown.context ? {} : { context };
     const memo = note.trim() === shown.note ? {} : { note: note.trim() };
