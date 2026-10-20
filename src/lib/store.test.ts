@@ -4,6 +4,7 @@ import type { Reading } from './glucose';
 const DATA = '/data/readings.csv';
 const files = new Map<string, { text: string; mtime: number }>();
 const unreadable = new Set<string>();
+const unwritable = new Set<string>();
 let clock = 1000;
 const backupFile = vi.fn(async (..._args: unknown[]) => {});
 
@@ -21,6 +22,7 @@ vi.mock('./platform', () => ({
     return files.get(path)?.text ?? null;
   },
   writeText: async (path: string, text: string) => {
+    if (unwritable.has(path)) throw new Error('Read-only file system');
     put(path, text);
     return clock;
   },
@@ -76,6 +78,7 @@ const typed = { time: new Date(2026, 8, 16, 7, 30), mmol: 5.9, context: '' as co
 beforeEach(() => {
   files.clear();
   unreadable.clear();
+  unwritable.clear();
   backupFile.mockClear();
   vi.stubGlobal('document', { documentElement: { dataset: {} } });
 });
@@ -151,6 +154,31 @@ describe('Store', () => {
     expect(replace).toHaveBeenCalledTimes(1);
     expect(replace.mock.calls[0][0].map((r) => r.id)).toEqual(['other']);
     expect(push).not.toHaveBeenCalled();
+  });
+
+  it('writes a save still waiting when another file is chosen into the file it came from', async () => {
+    const { store } = await openStore([line('old', 8, '6.4')]);
+    const other = '/elsewhere/other.csv';
+    put(other, fileOf([line('other', 9, '8.0')]));
+    const saved = store.add(typed);
+    await store.updateSettings({ dataFile: other });
+    await inside(store).queue;
+    expect(store.readings.map((r) => r.id)).toEqual(['other']);
+    expect(files.get(other)?.text).not.toContain(saved.id);
+    expect(onDisk()).toContain(saved.id);
+  });
+
+  it('switches to the chosen file even when the settings cannot be saved', async () => {
+    const { store } = await openStore([line('old', 8, '6.4')]);
+    const other = '/elsewhere/other.csv';
+    put(other, fileOf([line('other', 9, '8.0')]));
+    unwritable.add('/config/settings.json');
+    await store.updateSettings({ dataFile: other });
+    expect(store.readings.map((r) => r.id)).toEqual(['other']);
+    expect(store.toasts.map((t) => t.text)).toContain('Settings could not be saved: Error: Read-only file system');
+    store.add(typed);
+    await inside(store).queue;
+    expect(onDisk()).not.toContain('other');
   });
 
   it('backs the file up once a day, before the first write', async () => {

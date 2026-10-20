@@ -118,6 +118,8 @@ export class Store {
   paths = $state<AppPaths | null>(null);
   dataPath = $derived(this.settings.dataFile ?? this.paths?.data_file ?? '');
 
+  /** The file `rows` were read from. Saves and reloads use it, so they never reach a file chosen since. */
+  private rowsFile = '';
   private fileMtime: number | null = null;
   private lastUpdateCheck = 0;
   private writtenIds = new Set<string>();
@@ -228,9 +230,17 @@ export class Store {
     this.settings = { ...this.settings, ...patch, targets: { ...this.settings.targets, ...(patch.targets ?? {}) } };
     this.applyTheme();
     this.applyClock();
-    await this.persistSettings();
+    try {
+      await this.persistSettings();
+    } catch (e) {
+      this.toast(`Settings could not be saved: ${String(e)}`);
+    }
     if (patch.background !== undefined) void setBackgroundMode(this.settings.background);
-    if (fileChanged) await this.loadReadings('switch');
+    if (fileChanged) {
+      // Queued, so saves already waiting finish with the old file before the new one is read.
+      this.queue = this.queue.then(() => this.loadReadings('switch'));
+      await this.queue;
+    }
   }
 
   applyTheme(): void {
@@ -248,9 +258,10 @@ export class Store {
   /** 'external' folds a hand-edited file into memory; 'switch' restarts the sync engine from the new file. */
   async loadReadings(mode: 'open' | 'external' | 'switch' = 'open'): Promise<void> {
     this.loadError = null;
+    const path = mode === 'external' ? this.rowsFile : this.dataPath;
     try {
-      const text = await readText(this.dataPath);
-      const mtime = await fileMtime(this.dataPath);
+      const text = await readText(path);
+      const mtime = await fileMtime(path);
       const parsed = text ? parseReadings(text, this.settings.unit) : { readings: [], skipped: 0 };
       const unique = dedupeIds(parsed.readings);
       const current = dropExpiredTombstones(unique.rows);
@@ -263,6 +274,7 @@ export class Store {
         if (edit.kept) this.toast(`Kept ${edit.kept} reading${edit.kept === 1 ? '' : 's'} missing from the file. Delete them here to remove them everywhere.`);
       }
       this.rows = rows;
+      this.rowsFile = path;
       this.fileMtime = mtime;
       this.writtenIds = new Set(parsed.readings.map((r) => r.id));
       if (mode === 'switch') this.sync.replace(rows);
@@ -274,6 +286,7 @@ export class Store {
         return;
       }
       this.rows = [];
+      this.rowsFile = path;
       this.loadError = String(e);
     }
   }
@@ -281,8 +294,8 @@ export class Store {
   /** Runs after any queued writes, so the app's own saves are never mistaken for outside edits. */
   private checkExternalChange(): Promise<void> {
     this.queue = this.queue.then(async () => {
-      if (!this.ready || !this.dataPath) return;
-      const m = await fileMtime(this.dataPath);
+      if (!this.ready || !this.rowsFile) return;
+      const m = await fileMtime(this.rowsFile);
       if (m === this.fileMtime) return;
       await this.loadReadings('external');
       if (m !== null) this.toast('Readings reloaded from file');
@@ -293,12 +306,15 @@ export class Store {
   private persist(push = true): Promise<void> {
     // Rows that never loaded must not be written over the file they are still in.
     if (this.loadError) return this.queue;
+    const file = this.rowsFile;
     const snapshot = this.rows;
     if (push) this.sync.push(snapshot);
     this.queue = this.queue.then(async () => {
       try {
-        await this.backupOncePerDay();
-        this.fileMtime = await writeText(this.dataPath, readingsToCsv(snapshot));
+        await this.backupOncePerDay(file);
+        const mtime = await writeText(file, readingsToCsv(snapshot));
+        if (file !== this.rowsFile) return;
+        this.fileMtime = mtime;
         this.writtenIds = new Set(snapshot.map((r) => r.id));
       } catch (e) {
         this.toast(`Could not save: ${String(e)}`);
@@ -307,11 +323,11 @@ export class Store {
     return this.queue;
   }
 
-  private async backupOncePerDay(): Promise<void> {
-    const mark = `${this.dataPath}|${dayKey(new Date())}`;
+  private async backupOncePerDay(file: string): Promise<void> {
+    const mark = `${file}|${dayKey(new Date())}`;
     if (mark === this.backedUp) return;
     try {
-      await backupFile(this.dataPath, dayKey(new Date()), BACKUPS_KEPT);
+      await backupFile(file, dayKey(new Date()), BACKUPS_KEPT);
       this.backedUp = mark;
     } catch {
       // Saving goes ahead without a backup.
