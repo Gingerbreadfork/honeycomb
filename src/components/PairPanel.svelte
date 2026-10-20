@@ -14,6 +14,7 @@
   let busy = $state<string | null>(null);
   let error = $state<string | null>(null);
   let copied = $state(false);
+  let open = true;
 
   const snap = $derived(app.sync.snapshot);
   const nearby = $derived(snap?.nearby.filter((n) => !n.paired) ?? []);
@@ -24,16 +25,12 @@
     error = null;
     try {
       const p = await app.sync.startPairing();
+      if (!open) return app.sync.cancelPairing();
       code = p.code;
       expires = p.expires;
     } catch (e) {
       error = String(e);
     }
-  }
-
-  function stop(): void {
-    app.sync.cancelPairing();
-    onclose();
   }
 
   async function copy(): Promise<void> {
@@ -85,8 +82,13 @@
     }
   }
 
-  function start(): void {
+  /** The code stops working when the panel goes, however it was closed. */
+  function start(): () => void {
     void showCode();
+    return () => {
+      open = false;
+      app.sync.cancelPairing();
+    };
   }
 </script>
 
@@ -96,7 +98,7 @@
       <button type="button" aria-pressed={mode === 'show'} onclick={() => (mode = 'show')}>Show a code</button>
       <button type="button" aria-pressed={mode === 'enter'} onclick={() => (mode = 'enter')}>Enter a code</button>
     </div>
-    <button type="button" class="btn small ghost" onclick={stop}>Cancel</button>
+    <button type="button" class="btn small ghost" onclick={onclose}>Cancel</button>
   </div>
 
   {#if mode === 'show'}
