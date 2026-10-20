@@ -1,6 +1,6 @@
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
-/** Written with `offset` (minutes east of UTC) when given, otherwise with this device's zone. */
+/** Written with `offset`, in minutes east of UTC, when given, otherwise with this device's zone. */
 export function toLocalIso(d: Date, withMs = false, offset: number | null = null): string {
   const off = offset ?? -d.getTimezoneOffset();
   const sign = off >= 0 ? '+' : '-';

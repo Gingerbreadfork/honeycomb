@@ -85,8 +85,8 @@ pub(crate) fn write_new_private(path: &Path, bytes: &[u8]) -> std::io::Result<()
     options.open(path)?.write_all(bytes)
 }
 
-/// Renames over the target. Windows reports a file a scanner still has open as in use (errors 5
-/// and 32); those are retried for a short while.
+/// Renames over the target. Windows reports a file that a scanner still has open as in use, so
+/// errors 5 and 32 are retried for a short while.
 pub(crate) fn rename_over(from: &Path, to: &Path) -> std::io::Result<()> {
     let mut delay = std::time::Duration::from_millis(10);
     for _ in 0..6 {
