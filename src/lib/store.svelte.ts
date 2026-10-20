@@ -30,6 +30,8 @@ export type Clock = 'system' | '12h' | '24h';
 
 /** How often the automatic update check runs while Honeycomb is open. */
 const UPDATE_CHECK_EVERY = 12 * 60 * 60 * 1000;
+/** How long the automatic check waits after one that failed. */
+const UPDATE_RETRY_AFTER = 30 * 60 * 1000;
 
 export interface Settings {
   unit: Unit;
@@ -122,6 +124,7 @@ export class Store {
   private rowsFile = '';
   private fileMtime: number | null = null;
   private lastUpdateCheck = 0;
+  private lastUpdateTry = 0;
   private writtenIds = new Set<string>();
   private backedUp = '';
   private toastSeq = 0;
@@ -175,7 +178,9 @@ export class Store {
 
   /** The automatic check: when turned on, once at startup and then every twelve hours while Honeycomb runs. */
   private async checkForUpdateQuietly(): Promise<void> {
-    if (!this.settings.checkUpdates || Date.now() - this.lastUpdateCheck < UPDATE_CHECK_EVERY) return;
+    const now = Date.now();
+    if (!this.settings.checkUpdates || now - this.lastUpdateCheck < UPDATE_CHECK_EVERY || now - this.lastUpdateTry < UPDATE_RETRY_AFTER) return;
+    this.lastUpdateTry = now;
     await this.checkForUpdate().catch(() => {});
   }
 
