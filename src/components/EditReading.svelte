@@ -37,8 +37,9 @@
   }
 
   function remove(): void {
-    onclose();
+    // Closing clears the reading prop, so delete first.
     app.remove(reading.id);
+    onclose();
   }
 
   function onkeydown(e: KeyboardEvent): void {
