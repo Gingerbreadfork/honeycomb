@@ -424,12 +424,13 @@ export class Store {
     this.toasts = this.toasts.filter((t) => t.id !== id);
   }
 
+  /** Both wait for queued saves, so a reading entered just before is not lost. */
   quit(): void {
-    if (isTauri) void quitApp();
+    if (isTauri) void this.queue.finally(() => quitApp());
   }
 
   closeWindow(): void {
-    if (isTauri) void win.close();
+    if (isTauri) void this.queue.finally(() => win.close());
   }
 }
 
