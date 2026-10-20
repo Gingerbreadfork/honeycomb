@@ -52,7 +52,7 @@
   }
 
   function onkeydown(e: KeyboardEvent): void {
-    if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
+    if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') {
       e.preventDefault();
       save();
     }
