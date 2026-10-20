@@ -203,6 +203,17 @@ describe('Store', () => {
     expect(onDisk()).not.toContain('other');
   });
 
+  it('does not import a reading twice when it synced in while the dialog was open', async () => {
+    const { store } = await openStore([line('a', 8, '6.4')]);
+    store.previewImport('meter.csv', fileOf([line('m1', 10, '5.0'), line('m2', 11, '5.5')]));
+    const m1 = store.importing!.plan.add.find((r) => r.id === 'm1')!;
+    inside(store).applySynced([...store.rows, m1]);
+    store.confirmImport();
+    await inside(store).queue;
+    expect(store.rows.map((r) => r.id).sort()).toEqual(['a', 'm1', 'm2']);
+    expect(store.toasts.map((t) => t.text)).toContain('Imported 1 reading');
+  });
+
   it('backs the file up once a day, before the first write', async () => {
     const { store } = await openStore([line('a', 8, '6.4')]);
     store.add(typed);

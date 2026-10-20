@@ -407,10 +407,12 @@ export class Store {
     const job = this.importing;
     if (!job) return;
     this.importing = null;
-    if (!job.plan.add.length) return;
-    this.rows = [...this.rows, ...job.plan.add].sort((a, b) => a.time.getTime() - b.time.getTime());
+    // Checked again, since the same readings may have synced in while the dialog was open.
+    const { add } = planImport(this.rows, job.plan.add);
+    if (!add.length) return;
+    this.rows = [...this.rows, ...add].sort((a, b) => a.time.getTime() - b.time.getTime());
     void this.persist();
-    const n = job.plan.add.filter((r) => !r.deleted).length;
+    const n = add.filter((r) => !r.deleted).length;
     this.toast(`Imported ${n} reading${n === 1 ? '' : 's'}`);
   }
 
