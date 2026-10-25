@@ -62,6 +62,12 @@ fn app_profile() -> String {
     std::env::var("HONEYCOMB_PROFILE").unwrap_or_default()
 }
 
+/// The Flatpak app ID when running inside a Flatpak sandbox.
+#[cfg(desktop)]
+fn flatpak_id() -> Option<String> {
+    std::env::var("FLATPAK_ID").ok().filter(|id| !id.is_empty())
+}
+
 /// Returns None when the file does not exist yet.
 #[tauri::command]
 fn read_text(path: String) -> Result<Option<String>, String> {
@@ -271,13 +277,18 @@ pub fn run() {
     #[cfg(desktop)]
     {
         if std::env::var("HONEYCOMB_PROFILE").map(|p| p.trim().is_empty()).unwrap_or(true) {
-            builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            let mut single = tauri_plugin_single_instance::Builder::new().callback(|app, _args, _cwd| {
                 if let Some(w) = app.get_webview_window("main") {
                     let _ = w.show();
                     let _ = w.unminimize();
                     let _ = w.set_focus();
                 }
-            }));
+            });
+            // Flatpak only lets an app own bus names under its own ID.
+            if let Some(id) = flatpak_id() {
+                single = single.dbus_id(id);
+            }
+            builder = builder.plugin(single.build());
         }
         builder = builder
             .plugin(tauri_plugin_window_state::Builder::new().build())
