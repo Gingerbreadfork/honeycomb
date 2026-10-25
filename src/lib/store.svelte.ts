@@ -5,6 +5,7 @@ import {
   backupFile,
   canSelfUpdate,
   fileMtime,
+  inFlatpak,
   installUpdate,
   quitApp,
   readText,
@@ -116,6 +117,8 @@ export class Store {
   newRelease = $state<Release | null>(null);
   /** Download progress while a new version is being installed. */
   updating = $state<UpdateProgress | null>(null);
+  /** Running inside a Flatpak, so updates arrive through Flatpak and the app does not look for them. */
+  flatpak = $state(false);
 
   paths = $state<AppPaths | null>(null);
   dataPath = $derived(this.settings.dataFile ?? this.paths?.data_file ?? '');
@@ -133,6 +136,7 @@ export class Store {
   async init(): Promise<void> {
     try {
       this.paths = await appPaths();
+      this.flatpak = await inFlatpak();
       await this.loadSettings();
       this.applyTheme();
       this.applyClock();
@@ -179,7 +183,7 @@ export class Store {
   /** The automatic check: when turned on, once at startup and then every twelve hours while Honeycomb runs. */
   private async checkForUpdateQuietly(): Promise<void> {
     const now = Date.now();
-    if (!this.settings.checkUpdates || now - this.lastUpdateCheck < UPDATE_CHECK_EVERY || now - this.lastUpdateTry < UPDATE_RETRY_AFTER) return;
+    if (this.flatpak || !this.settings.checkUpdates || now - this.lastUpdateCheck < UPDATE_CHECK_EVERY || now - this.lastUpdateTry < UPDATE_RETRY_AFTER) return;
     this.lastUpdateTry = now;
     await this.checkForUpdate().catch(() => {});
   }

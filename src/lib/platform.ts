@@ -167,6 +167,11 @@ export async function quitApp(): Promise<void> {
   if (isTauri) await invoke('quit_app');
 }
 
+/** True inside a Flatpak, which delivers updates itself. */
+export async function inFlatpak(): Promise<boolean> {
+  return isTauri ? invoke<boolean>('in_flatpak') : false;
+}
+
 /** True where the app can fetch a release and install it over itself, which the Windows installer supports. */
 export const canSelfUpdate = isWindows;
 

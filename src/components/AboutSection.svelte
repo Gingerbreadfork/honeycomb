@@ -47,34 +47,38 @@
     <button type="button" class="btn small" onclick={() => go(`${repo}/releases`)}>Releases</button>
     <button type="button" class="btn small ghost" onclick={() => go(`${repo}/issues`)}>Report a problem</button>
   </div>
-  <div class="updates">
-    <div class="links">
-      <button type="button" class="btn small" onclick={check} disabled={checking}>{checking ? 'Checking…' : 'Check for updates'}</button>
-      {#if app.updating}
-        {@const progress = app.updating}
-        <span class="fine" role="status">{progressText(progress)}</span>
-      {:else if app.newRelease}
-        {@const found = app.newRelease}
-        {#if canSelfUpdate}
-          <button type="button" class="btn small primary" onclick={() => app.installUpdate()}>Install {found.version} and restart</button>
-        {:else}
-          <button type="button" class="btn small primary" onclick={() => go(found.url)}>Get {found.version}</button>
+  {#if app.flatpak}
+    <p class="fine">This copy is kept up to date by Flatpak, along with your other apps.</p>
+  {:else}
+    <div class="updates">
+      <div class="links">
+        <button type="button" class="btn small" onclick={check} disabled={checking}>{checking ? 'Checking…' : 'Check for updates'}</button>
+        {#if app.updating}
+          {@const progress = app.updating}
+          <span class="fine" role="status">{progressText(progress)}</span>
+        {:else if app.newRelease}
+          {@const found = app.newRelease}
+          {#if canSelfUpdate}
+            <button type="button" class="btn small primary" onclick={() => app.installUpdate()}>Install {found.version} and restart</button>
+          {:else}
+            <button type="button" class="btn small primary" onclick={() => go(found.url)}>Get {found.version}</button>
+          {/if}
+        {:else if checked}
+          <span class="fine" role="status">{checked}</span>
         {/if}
-      {:else if checked}
-        <span class="fine" role="status">{checked}</span>
-      {/if}
+      </div>
+      <label class="toggle">
+        <input type="checkbox" checked={app.settings.checkUpdates} onchange={(e) => app.updateSettings({ checkUpdates: e.currentTarget.checked })} />
+        <span>
+          Check for updates on its own
+          <small>
+            When Honeycomb starts and every twelve hours while it runs. Asks GitHub for the latest version number; nothing about you or your
+            readings is sent.{canSelfUpdate ? ' Nothing installs until you say so.' : ''}
+          </small>
+        </span>
+      </label>
     </div>
-    <label class="toggle">
-      <input type="checkbox" checked={app.settings.checkUpdates} onchange={(e) => app.updateSettings({ checkUpdates: e.currentTarget.checked })} />
-      <span>
-        Check for updates on its own
-        <small>
-          When Honeycomb starts and every twelve hours while it runs. Asks GitHub for the latest version number; nothing about you or your
-          readings is sent.{canSelfUpdate ? ' Nothing installs until you say so.' : ''}
-        </small>
-      </span>
-    </label>
-  </div>
+  {/if}
   <p class="fine">
     Estimated A1c is calculated from your readings and is not a laboratory result. Talk to your care team about your targets.
   </p>

@@ -63,9 +63,14 @@ fn app_profile() -> String {
 }
 
 /// The Flatpak app ID when running inside a Flatpak sandbox.
-#[cfg(desktop)]
 fn flatpak_id() -> Option<String> {
     std::env::var("FLATPAK_ID").ok().filter(|id| !id.is_empty())
+}
+
+/// True inside a Flatpak, where updates come through Flatpak instead of the app.
+#[tauri::command]
+fn in_flatpak() -> bool {
+    flatpak_id().is_some()
 }
 
 /// Returns None when the file does not exist yet.
@@ -322,6 +327,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_paths,
             app_profile,
+            in_flatpak,
             read_text,
             write_text,
             file_mtime,
