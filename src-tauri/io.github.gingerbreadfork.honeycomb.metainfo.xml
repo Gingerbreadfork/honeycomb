@@ -75,6 +75,14 @@
   </screenshots>
 
   <releases>
+    <release version="0.4.1" date="2026-10-25">
+      <description>
+        <p>
+          Honeycomb is ready to run as a Flatpak. Inside one, updates arrive through Flatpak and
+          opening the app again brings back the window that is already running.
+        </p>
+      </description>
+    </release>
     <release version="0.4.0" date="2026-10-20">
       <description>
         <p>
