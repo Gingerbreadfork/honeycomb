@@ -189,8 +189,9 @@ pnpm tauri android dev    # run on a connected device or emulator
 
 Pushing a tag like `v0.2.0` runs the release workflow, which runs the tests, builds the Linux
 packages and the Windows installer, and attaches them to a GitHub release. The tag has to match
-the version in `package.json`, `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml`;
-`./scripts/check-version.sh` tells you whether the three agree. The Android job also runs if the repository has two secrets:
+the version in `package.json`, `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml`, and the
+newest `<release>` in `src-tauri/io.github.gingerbreadfork.honeycomb.metainfo.xml` needs an entry
+for it; `./scripts/check-version.sh` tells you whether all four agree. The Android job also runs if the repository has two secrets:
 `ANDROID_KEYSTORE_BASE64` (the signing keystore, base64 encoded) and `ANDROID_KEYSTORE_PASS`.
 Without them, build the APK locally with `./android-build.sh` and upload it by hand.
 
