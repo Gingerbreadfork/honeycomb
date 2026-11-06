@@ -91,13 +91,17 @@ function stampAfter(r: Reading): number {
   return Math.max(Date.now(), r.updated + 1);
 }
 
-function guessUnit(): Unit {
+/** Canada's time zones, including retired names a system may still report. Canada uses mmol/L. */
+const CANADIAN_ZONE =
+  /^(Canada\/|America\/(Atikokan|Blanc-Sablon|Cambridge_Bay|Creston|Dawson|Dawson_Creek|Edmonton|Fort_Nelson|Glace_Bay|Goose_Bay|Halifax|Inuvik|Iqaluit|Moncton|Montreal|Nipigon|Pangnirtung|Rainy_River|Rankin_Inlet|Regina|Resolute|St_Johns|Swift_Current|Thunder_Bay|Toronto|Vancouver|Whitehorse|Winnipeg|Yellowknife)$)/;
+
+/** The unit a new user most likely reads, from the time zone and then the language's region. */
+export function guessUnit(tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? '', language = navigator.language): Unit {
   try {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
-    const region = new Intl.Locale(navigator.language).maximize().region ?? '';
+    const region = new Intl.Locale(language).maximize().region ?? '';
     const mgdl = ['US', 'IN', 'DE', 'AT', 'FR', 'BE', 'IT', 'ES', 'PL', 'JP', 'KR', 'IL', 'MX', 'BR', 'AR', 'CL', 'CO', 'EG', 'TR'];
-    if (tz.startsWith('America/') && !tz.includes('Toronto') && !tz.includes('Vancouver')) return 'mg/dL';
-    if (tz.startsWith('Australia/') || tz.startsWith('Europe/London') || tz.startsWith('Pacific/Auckland')) return 'mmol/L';
+    if (CANADIAN_ZONE.test(tz) || tz.startsWith('Australia/') || tz.startsWith('Europe/London') || tz.startsWith('Pacific/Auckland')) return 'mmol/L';
+    if (tz.startsWith('America/')) return 'mg/dL';
     return mgdl.includes(region) ? 'mg/dL' : 'mmol/L';
   } catch {
     return 'mmol/L';

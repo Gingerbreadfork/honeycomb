@@ -41,7 +41,7 @@ vi.mock('./platform', () => ({
   win: { isMaximized: async () => false, onResized: async () => () => {}, close: () => closeWindow() },
 }));
 
-const { Store } = await import('./store.svelte');
+const { Store, guessUnit } = await import('./store.svelte');
 type StoreInstance = InstanceType<typeof Store>;
 
 /** The parts of the store the page never calls directly: the sync engine and the focus handler drive them. */
@@ -87,6 +87,18 @@ beforeEach(() => {
   closeWindow.mockReset();
   tauri = false;
   vi.stubGlobal('document', { documentElement: { dataset: {} } });
+});
+
+describe('guessUnit', () => {
+  it('guesses mmol/L across Canada and mg/dL elsewhere in the Americas', () => {
+    for (const tz of ['America/Toronto', 'America/Edmonton', 'America/Halifax', 'America/St_Johns', 'America/Montreal', 'Canada/Pacific']) {
+      expect(guessUnit(tz, 'en-US'), tz).toBe('mmol/L');
+    }
+    expect(guessUnit('America/Chicago', 'en-US')).toBe('mg/dL');
+    expect(guessUnit('America/Sao_Paulo', 'pt-BR')).toBe('mg/dL');
+    expect(guessUnit('Europe/Berlin', 'de-DE')).toBe('mg/dL');
+    expect(guessUnit('Europe/Stockholm', 'sv-SE')).toBe('mmol/L');
+  });
 });
 
 describe('Store', () => {
