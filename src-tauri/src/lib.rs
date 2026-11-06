@@ -148,21 +148,41 @@ fn backup_file(app: tauri::AppHandle, path: String, label: String, keep: usize) 
     rotate_backup(&src, &dir, &label, keep).map(|made| made.map(|p| p.to_string_lossy().into_owned())).map_err(|e| e.to_string())
 }
 
-fn rotate_backup(src: &Path, dir: &Path, label: &str, keep: usize) -> std::io::Result<Option<PathBuf>> {
+/// The start of every backup name for `src`. A short hash of the full path keeps apart files that
+/// share a name.
+fn backup_prefix(src: &Path) -> String {
     let stem = src.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "readings".into());
-    let dest = dir.join(format!("{stem}-{label}.csv"));
+    let hash = blake3::hash(src.to_string_lossy().as_bytes()).to_hex();
+    format!("{stem}-{}-", &hash[..8])
+}
+
+/// True for a label like `2026-09-01`.
+fn is_day(text: &str) -> bool {
+    text.len() == 10 && text.bytes().enumerate().all(|(i, b)| if i == 4 || i == 7 { b == b'-' } else { b.is_ascii_digit() })
+}
+
+fn rotate_backup(src: &Path, dir: &Path, label: &str, keep: usize) -> std::io::Result<Option<PathBuf>> {
+    let prefix = backup_prefix(src);
+    let dest = dir.join(format!("{prefix}{label}.csv"));
     if dest.exists() {
         return Ok(None);
     }
     std::fs::create_dir_all(dir)?;
     write_new_private(&dest, &std::fs::read(src)?)?;
-    let prefix = format!("{stem}-");
-    let mut copies: Vec<PathBuf> = std::fs::read_dir(dir)?
+    let stem = src.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "readings".into());
+    let unhashed = format!("{stem}-");
+    // Copies named without the hash, `readings-2026-09-01.csv`, are counted with this file's own.
+    let label_of = |name: &str| -> Option<String> {
+        let middle = name.strip_suffix(".csv")?;
+        let label = middle.strip_prefix(&prefix).or_else(|| middle.strip_prefix(&unhashed).filter(|l| is_day(l)))?;
+        (!label.is_empty() && label.chars().all(|c| c.is_ascii_digit() || c == '-')).then(|| label.to_string())
+    };
+    let mut copies: Vec<(String, PathBuf)> = std::fs::read_dir(dir)?
         .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with(&prefix) && n.to_string_lossy().ends_with(".csv")))
+        .filter_map(|p| p.file_name().and_then(|n| label_of(&n.to_string_lossy())).map(|label| (label, p)))
         .collect();
     copies.sort();
-    for old in copies.iter().rev().skip(keep.max(1)) {
+    for (_, old) in copies.iter().rev().skip(keep.max(1)) {
         let _ = std::fs::remove_file(old);
     }
     Ok(Some(dest))
@@ -367,13 +387,53 @@ mod tests {
         assert!(rotate_backup(&src, &dir, "2026-09-01", 3).unwrap().is_some());
         std::fs::write(&src, "second").unwrap();
         assert!(rotate_backup(&src, &dir, "2026-09-01", 3).unwrap().is_none());
-        assert_eq!(std::fs::read_to_string(dir.join("readings-2026-09-01.csv")).unwrap(), "first");
+        let prefix = backup_prefix(&src);
+        assert!(prefix.starts_with("readings-") && prefix.len() == "readings-".len() + 9);
+        assert_eq!(std::fs::read_to_string(dir.join(format!("{prefix}2026-09-01.csv"))).unwrap(), "first");
         for day in ["2026-09-02", "2026-09-03", "2026-09-04"] {
             rotate_backup(&src, &dir, day, 3).unwrap();
         }
-        let mut names: Vec<String> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        assert_eq!(names_in(&dir), ["2026-09-02", "2026-09-03", "2026-09-04"].map(|d| format!("{prefix}{d}.csv")));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn names_in(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
         names.sort();
-        assert_eq!(names, ["readings-2026-09-02.csv", "readings-2026-09-03.csv", "readings-2026-09-04.csv"]);
+        names
+    }
+
+    #[test]
+    fn files_with_the_same_name_get_backups_of_their_own() {
+        let root = std::env::temp_dir().join(format!("honeycomb-backup-same-name-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (one, two, dir) = (root.join("one/readings.csv"), root.join("two/readings.csv"), root.join("backups"));
+        for (src, text) in [(&one, "one"), (&two, "two")] {
+            std::fs::create_dir_all(src.parent().unwrap()).unwrap();
+            std::fs::write(src, text).unwrap();
+        }
+        assert!(rotate_backup(&one, &dir, "2026-09-01", 1).unwrap().is_some());
+        assert!(rotate_backup(&two, &dir, "2026-09-01", 1).unwrap().is_some());
+        rotate_backup(&two, &dir, "2026-09-02", 1).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join(format!("{}2026-09-01.csv", backup_prefix(&one)))).unwrap(), "one");
+        assert_eq!(std::fs::read_to_string(dir.join(format!("{}2026-09-02.csv", backup_prefix(&two)))).unwrap(), "two");
+        assert_eq!(names_in(&dir).len(), 2);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn backups_named_without_the_hash_are_rotated_with_the_new_ones() {
+        let root = std::env::temp_dir().join(format!("honeycomb-backup-unhashed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (src, dir) = (root.join("readings.csv"), root.join("backups"));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&src, "now").unwrap();
+        for name in ["readings-2026-08-30.csv", "readings-2026-08-31.csv", "readings-old-2026-08-01.csv"] {
+            std::fs::write(dir.join(name), "before").unwrap();
+        }
+        rotate_backup(&src, &dir, "2026-09-01", 2).unwrap();
+        let prefix = backup_prefix(&src);
+        assert_eq!(names_in(&dir), ["readings-2026-08-31.csv".into(), format!("{prefix}2026-09-01.csv"), "readings-old-2026-08-01.csv".into()]);
         let _ = std::fs::remove_dir_all(&root);
     }
 
