@@ -73,11 +73,15 @@ fn in_flatpak() -> bool {
     flatpak_id().is_some()
 }
 
-/// Returns None when the file does not exist yet.
+/// Returns None when the file does not exist yet. Text that isn't UTF-8 is an error, so a later save
+/// can't write replacement characters over it; `lossy` reads it anyway, for imports.
 #[tauri::command]
-fn read_text(path: String) -> Result<Option<String>, String> {
+fn read_text(path: String, lossy: Option<bool>) -> Result<Option<String>, String> {
     match std::fs::read(&path) {
-        Ok(bytes) => Ok(Some(String::from_utf8_lossy(&bytes).into_owned())),
+        Ok(bytes) if lossy.unwrap_or(false) => Ok(Some(String::from_utf8_lossy(&bytes).into_owned())),
+        Ok(bytes) => String::from_utf8(bytes)
+            .map(Some)
+            .map_err(|_| "It isn't saved as UTF-8 text. Save it as UTF-8, which Excel calls CSV UTF-8, and try again.".to_string()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e.to_string()),
     }
@@ -434,6 +438,19 @@ mod tests {
         rotate_backup(&src, &dir, "2026-09-01", 2).unwrap();
         let prefix = backup_prefix(&src);
         assert_eq!(names_in(&dir), ["readings-2026-08-31.csv".into(), format!("{prefix}2026-09-01.csv"), "readings-old-2026-08-01.csv".into()]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn text_that_is_not_utf8_is_only_read_when_asked() {
+        let root = std::env::temp_dir().join(format!("honeycomb-read-text-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("latin1.csv");
+        std::fs::write(&path, b"time,glucose,note\n2026-09-01T08:00,6.4,caf\xe9\n").unwrap();
+        let path = path.to_string_lossy().into_owned();
+        assert!(read_text(path.clone(), None).unwrap_err().contains("UTF-8"));
+        assert!(read_text(path.clone(), Some(true)).unwrap().unwrap().ends_with("caf\u{fffd}\n"));
+        assert_eq!(read_text(root.join("missing.csv").to_string_lossy().into_owned(), None), Ok(None));
         let _ = std::fs::remove_dir_all(&root);
     }
 

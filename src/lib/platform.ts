@@ -26,8 +26,9 @@ export async function appPaths(): Promise<AppPaths> {
   return { data_file: '~/.local/share/honeycomb/readings.csv', settings_file: '~/.config/honeycomb/settings.json' };
 }
 
-export async function readText(path: string): Promise<string | null> {
-  if (isTauri) return invoke<string | null>('read_text', { path });
+/** Fails on text that isn't UTF-8 unless `lossy`, which reads it with replacement characters. */
+export async function readText(path: string, lossy = false): Promise<string | null> {
+  if (isTauri) return invoke<string | null>('read_text', { path, lossy });
   return localStorage.getItem(LS_PREFIX + path);
 }
 
@@ -70,7 +71,7 @@ export async function pickCsvText(): Promise<{ name: string; text: string } | nu
   if (isTauri) {
     const path = await pickCsvPath();
     if (!path) return null;
-    const text = isMobile ? await readTextFile(path) : await readText(path);
+    const text = isMobile ? await readTextFile(path) : await readText(path, true);
     const name = (isMobile ? decodeURIComponent(path.split(/[/%]2F|\//).pop() ?? path).replace(/^.*:/, '') : fileName(path)) || 'file.csv';
     return text === null ? null : { name, text };
   }
