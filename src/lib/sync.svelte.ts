@@ -97,6 +97,8 @@ export class SyncState {
   onRows: ((rows: Reading[]) => void) | null = null;
   onPulled: ((from: string, changed: number) => void) | null = null;
   onPaired: ((device: DeviceInfo) => void) | null = null;
+  /** This device said yes, but the user on the other one did not. */
+  onPairCancelled: ((device: DeviceInfo) => void) | null = null;
 
   get configured(): boolean {
     return (this.snapshot?.peers.length ?? 0) > 0;
@@ -118,6 +120,7 @@ export class SyncState {
     });
     await listen<{ from: string; changed: number }>('sync:pulled', (e) => this.onPulled?.(e.payload.from, e.payload.changed));
     await listen<DeviceInfo>('sync:paired', (e) => this.onPaired?.(e.payload));
+    await listen<DeviceInfo>('sync:pair-cancelled', (e) => this.onPairCancelled?.(e.payload));
     await listen<PairRequest>('sync:pair-request', (e) => (this.pairRequest = e.payload));
     await listen<number>('sync:pair-request-ended', (e) => {
       if (this.pairRequest?.request_id === e.payload) this.pairRequest = null;

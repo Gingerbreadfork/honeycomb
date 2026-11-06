@@ -107,10 +107,26 @@ impl PairCode {
 #[serde(tag = "kind", rename_all = "kebab-case")]
 enum Message {
     /// `secret` comes from a typed or scanned code. Without one, `commit` starts the on-screen code exchange.
-    Pair { device: DeviceInfo, addr: EndpointAddr, secret: Option<[u8; 4]>, commit: Option<[u8; 32]> },
+    /// `confirms` says the starter will send `PairDone` once its own user agrees the codes match.
+    Pair {
+        device: DeviceInfo,
+        addr: EndpointAddr,
+        secret: Option<[u8; 4]>,
+        commit: Option<[u8; 32]>,
+        #[serde(default)]
+        confirms: bool,
+    },
     PairChallenge { nonce: [u8; 16] },
     PairReveal { nonce: [u8; 16] },
-    PairOk { device: DeviceInfo, addr: EndpointAddr },
+    /// With `confirms`, the answering device saves the pairing only after the starter's `PairDone`.
+    PairOk {
+        device: DeviceInfo,
+        addr: EndpointAddr,
+        #[serde(default)]
+        confirms: bool,
+    },
+    /// From the starter once its user agrees, then back from the other device once it has saved the pairing.
+    PairDone,
     PairRejected { reason: String },
     Sync { device: DeviceInfo, addr: EndpointAddr, rows: Vec<Row> },
     /// `digest` leaves reading times out and is what older versions compare; `full_digest` covers them too.
@@ -760,7 +776,7 @@ impl SyncEngine {
             return Err("That is this device's own code".into());
         }
         let device = self.device();
-        let msg = Message::Pair { device, addr: self.my_addr(), secret: Some(code.secret), commit: None };
+        let msg = Message::Pair { device, addr: self.my_addr(), secret: Some(code.secret), commit: None, confirms: false };
         let conn = tokio::time::timeout(CONNECT_TIMEOUT, self.endpoint.connect(target, ALPN_PAIR))
             .await
             .map_err(|_| "Couldn't reach the other device. Check it is open and online.".to_string())?
@@ -768,7 +784,7 @@ impl SyncEngine {
         let response = within(IO_TIMEOUT, request(&conn, &msg, MAX_PAIR_MESSAGE)).await?;
         conn.close(0u32.into(), b"done");
         match response {
-            Message::PairOk { device, addr } => {
+            Message::PairOk { device, addr, .. } => {
                 if device.id != target_id.to_string() {
                     return Err("Identity mismatch".into());
                 }
@@ -801,38 +817,49 @@ impl SyncEngine {
         let addr_id = addr.id;
         let my_nonce = random_bytes::<16>()?;
         let (mut send, mut recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
-        let start = Message::Pair { device, addr: self.my_addr(), secret: None, commit: Some(commitment(&my_nonce)) };
+        let start = Message::Pair { device, addr: self.my_addr(), secret: None, commit: Some(commitment(&my_nonce)), confirms: true };
         write_message(&mut send, &start).await?;
         let their_nonce = match within(IO_TIMEOUT, read_message(&mut recv, MAX_PAIR_MESSAGE)).await? {
             Message::PairChallenge { nonce } => nonce,
             Message::PairRejected { reason } => return Err(reason),
             _ => return Err("Unexpected reply while pairing".into()),
         };
-        reply(&mut send, &Message::PairReveal { nonce: my_nonce }).await?;
+        write_message(&mut send, &Message::PairReveal { nonce: my_nonce }).await?;
         let code = pairing_code(&self.endpoint.id(), &addr_id, &my_nonce, &their_nonce);
         self.emit("sync:pair-waiting", code.clone());
         let response = tokio::time::timeout(Duration::from_secs(90), read_message(&mut recv, MAX_PAIR_MESSAGE))
             .await
             .map_err(|_| "The other device didn't answer in time".to_string())??;
-        conn.close(0u32.into(), b"done");
-        match response {
-            Message::PairOk { device, addr } => {
-                let device = DeviceInfo { id: device.id, name: clean_device_name(&device.name) };
-                if device.id != addr_id.to_string() {
-                    return Err("Identity mismatch".into());
-                }
-                if !self.ask_user("sync:pair-confirm", &device, code).await {
-                    return Err("Pairing was cancelled".into());
-                }
-                self.add_peer(&device, addr);
-                self.save();
-                self.emit_state();
-                self.wake.notify_one();
-                Ok(device)
-            }
-            Message::PairRejected { reason } => Err(reason),
-            _ => Err("Unexpected reply while pairing".into()),
+        let (device, addr, confirms) = match response {
+            Message::PairOk { device, addr, confirms } => (DeviceInfo { id: device.id, name: clean_device_name(&device.name) }, addr, confirms),
+            Message::PairRejected { reason } => return Err(reason),
+            _ => return Err("Unexpected reply while pairing".into()),
+        };
+        if device.id != addr_id.to_string() {
+            conn.close(0u32.into(), b"done");
+            return Err("Identity mismatch".into());
         }
+        // An older device has already saved the pairing and only waits for the hang-up.
+        if !confirms {
+            conn.close(0u32.into(), b"done");
+        }
+        if !self.ask_user("sync:pair-confirm", &device, code).await {
+            conn.close(0u32.into(), b"cancelled");
+            return Err("Pairing was cancelled".into());
+        }
+        if confirms {
+            reply(&mut send, &Message::PairDone).await?;
+            let saved = within(IO_TIMEOUT, read_message(&mut recv, MAX_PAIR_MESSAGE)).await;
+            conn.close(0u32.into(), b"done");
+            if !matches!(saved, Ok(Message::PairDone)) {
+                return Err("The other device stopped answering".into());
+            }
+        }
+        self.add_peer(&device, addr);
+        self.save();
+        self.emit_state();
+        self.wake.notify_one();
+        Ok(device)
     }
 
     /// Shows the confirmation code on this device and waits for the user's answer.
@@ -893,7 +920,7 @@ impl SyncEngine {
         let (mut send, mut recv) = within(IO_TIMEOUT, async { conn.accept_bi().await.map_err(|e| e.to_string()) }).await?;
         let msg = within(IO_TIMEOUT, read_message(&mut recv, limit)).await?;
         if pairing {
-            let Message::Pair { device, addr: their_addr, secret, commit } = msg else {
+            let Message::Pair { device, addr: their_addr, secret, commit, confirms } = msg else {
                 return Err("expected pair".into());
             };
             if device.id != remote.to_string() {
@@ -945,12 +972,29 @@ impl SyncEngine {
                 return Ok(());
             }
             let addr = if their_addr.id == remote { their_addr } else { EndpointAddr::new(remote) };
-            reply(&mut send, &Message::PairOk { device: self.device(), addr: self.my_addr() }).await?;
+            let ok = Message::PairOk { device: self.device(), addr: self.my_addr(), confirms };
+            if confirms {
+                write_message(&mut send, &ok).await?;
+                // Hanging up or saying nothing means the user on the other device said no.
+                let answer = tokio::select! {
+                    answer = tokio::time::timeout(Duration::from_secs(90), read_message(&mut recv, MAX_PAIR_MESSAGE)) => answer.ok().and_then(|r| r.ok()),
+                    _ = conn.closed() => None,
+                };
+                if !matches!(answer, Some(Message::PairDone)) {
+                    self.emit("sync:pair-cancelled", device);
+                    return Ok(());
+                }
+            } else {
+                reply(&mut send, &ok).await?;
+            }
             self.add_peer(&device, addr);
             self.inner.lock().unwrap().pairing = None;
             self.save();
             self.emit("sync:paired", device);
             self.emit_state();
+            if confirms {
+                let _ = reply(&mut send, &Message::PairDone).await;
+            }
             wait_closed(&conn).await;
             self.wake.notify_one();
             return Ok(());
@@ -1364,13 +1408,18 @@ mod tests {
             wary.engine.inner.lock().unwrap().nearby.insert(b_id.clone(), ("b".into(), b.engine.my_addr()));
             assert!(wary.engine.pair_nearby(&b_id).await.is_err());
             assert!(wary.engine.snapshot().peers.is_empty());
+            eventually("b hears that wary said no", || b.ui.saw("sync:pair-cancelled") == 1).await;
+            assert!(b.engine.snapshot().peers.is_empty(), "b must not keep a device whose user said no");
+            assert_eq!(b.ui.saw("sync:paired"), 0);
 
             let a = device("a", true).await;
             a.engine.inner.lock().unwrap().nearby.insert(b_id.clone(), ("b".into(), b.engine.my_addr()));
             let paired = a.engine.pair_nearby(&b_id).await.unwrap();
             assert_eq!(paired.name, "b");
             assert_eq!(a.engine.snapshot().peers.len(), 1);
+            assert_eq!(b.engine.snapshot().peers.len(), 1);
             assert!(b.engine.snapshot().peers.iter().any(|p| p.id == a.engine.device().id));
+            assert_eq!(b.ui.saw("sync:paired"), 1);
             assert_eq!(a.ui.saw("sync:pair-confirm"), 1);
             assert!(b.ui.saw("sync:pair-request") >= 1);
 
@@ -1391,13 +1440,65 @@ mod tests {
             let conn = cheat.connect(b.engine.my_addr(), ALPN_PAIR).await.unwrap();
             let (mut send, mut recv) = conn.open_bi().await.unwrap();
             let me = DeviceInfo { id: cheat.id().to_string(), name: "cheat".into() };
-            let start = Message::Pair { device: me, addr: cheat.addr(), secret: None, commit: Some(commitment(&[1; 16])) };
+            let start = Message::Pair { device: me, addr: cheat.addr(), secret: None, commit: Some(commitment(&[1; 16])), confirms: true };
             write_message(&mut send, &start).await.unwrap();
             assert!(matches!(read_message(&mut recv, MAX_PAIR_MESSAGE).await, Ok(Message::PairChallenge { .. })));
             reply(&mut send, &Message::PairReveal { nonce: [2; 16] }).await.unwrap();
             assert!(matches!(read_message(&mut recv, MAX_PAIR_MESSAGE).await, Ok(Message::PairRejected { .. })));
             assert_eq!(b.ui.saw("sync:pair-request"), 0, "the user is never asked");
             assert!(b.engine.snapshot().peers.is_empty());
+        });
+    }
+
+    #[test]
+    fn a_starter_on_an_older_version_is_paired_as_before() {
+        tauri::async_runtime::block_on(async {
+            let b = device("b", true).await;
+            let old = Endpoint::builder(presets::Minimal).relay_mode(RelayMode::Disabled).bind().await.unwrap();
+            let conn = old.connect(b.engine.my_addr(), ALPN_PAIR).await.unwrap();
+            let (mut send, mut recv) = conn.open_bi().await.unwrap();
+            let me = DeviceInfo { id: old.id().to_string(), name: "old".into() };
+            let start = Message::Pair { device: me, addr: old.addr(), secret: None, commit: Some(commitment(&[1; 16])), confirms: true };
+            write_without(&mut send, &start, "confirms").await;
+            assert!(matches!(read_message(&mut recv, MAX_PAIR_MESSAGE).await, Ok(Message::PairChallenge { .. })));
+            reply(&mut send, &Message::PairReveal { nonce: [1; 16] }).await.unwrap();
+            assert!(matches!(read_message(&mut recv, MAX_PAIR_MESSAGE).await, Ok(Message::PairOk { confirms: false, .. })));
+            conn.close(0u32.into(), b"done");
+            eventually("b saves the pairing straight away", || b.engine.snapshot().peers.len() == 1).await;
+        });
+    }
+
+    /// Writes a message without the given field, as a version from before that field would.
+    async fn write_without(send: &mut iroh::endpoint::SendStream, msg: &Message, field: &str) {
+        let mut value = serde_json::to_value(msg).unwrap();
+        value.as_object_mut().unwrap().remove(field);
+        let bytes = serde_json::to_vec(&value).unwrap();
+        send.write_all(&(bytes.len() as u32).to_be_bytes()).await.unwrap();
+        send.write_all(&bytes).await.unwrap();
+    }
+
+    #[test]
+    fn pairing_with_an_answerer_on_an_older_version_still_works() {
+        tauri::async_runtime::block_on(async {
+            let a = device("a", true).await;
+            let old = Endpoint::builder(presets::Minimal).relay_mode(RelayMode::Disabled).alpns(vec![ALPN_PAIR.to_vec()]).bind().await.unwrap();
+            let info = DeviceInfo { id: old.id().to_string(), name: "old".into() };
+            let (ep, me) = (old.clone(), info.clone());
+            tauri::async_runtime::spawn(async move {
+                let Some(incoming) = ep.accept().await else { return };
+                let Ok(conn) = incoming.await else { return };
+                let Ok((mut send, mut recv)) = conn.accept_bi().await else { return };
+                let _ = read_message(&mut recv, MAX_PAIR_MESSAGE).await;
+                let _ = write_message(&mut send, &Message::PairChallenge { nonce: [3; 16] }).await;
+                let _ = read_message(&mut recv, MAX_PAIR_MESSAGE).await;
+                write_without(&mut send, &Message::PairOk { device: me, addr: ep.addr(), confirms: true }, "confirms").await;
+                let _ = send.finish();
+                wait_closed(&conn).await;
+            });
+            a.engine.inner.lock().unwrap().nearby.insert(info.id.clone(), ("old".into(), old.addr()));
+            let paired = a.engine.pair_nearby(&info.id).await.unwrap();
+            assert_eq!(paired.id, info.id);
+            assert_eq!(a.engine.snapshot().peers.len(), 1);
         });
     }
 

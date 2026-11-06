@@ -176,6 +176,7 @@ export class Store {
     this.sync.onRows = (rows) => this.applySynced(rows);
     this.sync.onPulled = (from, changed) => this.toast(`${changed} reading${changed === 1 ? '' : 's'} from ${from}`);
     this.sync.onPaired = (device) => this.toast(`Paired with ${device.name}`);
+    this.sync.onPairCancelled = (device) => this.toast(`Pairing with ${device.name} wasn't confirmed on that device`);
     await this.sync.init();
     this.sync.push(this.rows);
     void this.checkForUpdateQuietly();
