@@ -437,7 +437,9 @@ mod tests {
         }
         rotate_backup(&src, &dir, "2026-09-01", 2).unwrap();
         let prefix = backup_prefix(&src);
-        assert_eq!(names_in(&dir), ["readings-2026-08-31.csv".into(), format!("{prefix}2026-09-01.csv"), "readings-old-2026-08-01.csv".into()]);
+        let mut kept = vec!["readings-2026-08-31.csv".to_string(), format!("{prefix}2026-09-01.csv"), "readings-old-2026-08-01.csv".into()];
+        kept.sort();
+        assert_eq!(names_in(&dir), kept);
         let _ = std::fs::remove_dir_all(&root);
     }
 
