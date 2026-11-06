@@ -1009,7 +1009,9 @@ impl SyncEngine {
         let (mut send, msg) = match msg {
             Message::Check { device, addr, digest, full_digest } => {
                 let same = {
-                    let g = self.inner.lock().unwrap();
+                    let mut g = self.inner.lock().unwrap();
+                    // A failed check can mark a peer as too old for one; sending one shows it is not.
+                    g.full_only.remove(&remote.to_string());
                     match full_digest {
                         Some(full) => digest_rows(&g.rows, true) == full,
                         None => digest_rows(&g.rows, false) == digest,
@@ -1365,6 +1367,19 @@ mod tests {
             assert!(a.engine.inner.lock().unwrap().full_only.contains(&old_device.id));
             a.engine.sync_all().await;
             assert_eq!(full_exchanges(&a), 2, "the second round goes straight to a full exchange");
+        });
+    }
+
+    #[test]
+    fn a_peer_that_sends_a_check_is_not_treated_as_old() {
+        tauri::async_runtime::block_on(async {
+            let a = device("a", true).await;
+            let b = device("b", true).await;
+            pair(&a, &b);
+            let b_id = b.engine.device().id;
+            a.engine.inner.lock().unwrap().full_only.insert(b_id.clone());
+            b.engine.sync_all().await;
+            eventually("a stops treating b as old", || !a.engine.inner.lock().unwrap().full_only.contains(&b_id)).await;
         });
     }
 
