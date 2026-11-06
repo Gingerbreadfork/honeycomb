@@ -6,14 +6,18 @@ const files = new Map<string, { text: string; mtime: number }>();
 const unreadable = new Set<string>();
 const unwritable = new Set<string>();
 let clock = 1000;
+let tauri = false;
 const backupFile = vi.fn(async (..._args: unknown[]) => {});
+const closeWindow = vi.fn(async () => {});
 
 function put(path: string, text: string): void {
   files.set(path, { text, mtime: ++clock });
 }
 
 vi.mock('./platform', () => ({
-  isTauri: false,
+  get isTauri() {
+    return tauri;
+  },
   isMobile: false,
   isDesktop: false,
   appPaths: async () => ({ data_file: DATA, settings_file: '/config/settings.json' }),
@@ -34,7 +38,7 @@ vi.mock('./platform', () => ({
   installUpdate: async () => false,
   pickCsvText: async () => null,
   openLink: async () => {},
-  win: { isMaximized: async () => false, onResized: async () => () => {}, close: async () => {} },
+  win: { isMaximized: async () => false, onResized: async () => () => {}, close: () => closeWindow() },
 }));
 
 const { Store } = await import('./store.svelte');
@@ -80,6 +84,8 @@ beforeEach(() => {
   unreadable.clear();
   unwritable.clear();
   backupFile.mockClear();
+  closeWindow.mockReset();
+  tauri = false;
   vi.stubGlobal('document', { documentElement: { dataset: {} } });
 });
 
@@ -161,6 +167,22 @@ describe('Store', () => {
     await inside(store).queue;
     expect(store.readings.map((r) => r.id)).toEqual(['b']);
     expect(onDisk()).toMatch(/,a,[^,]+,\d{4}-/);
+  });
+
+  it('closes the window only after a save the file reload queued', async () => {
+    const { store, push } = await openStore([line('a', 8, '6.4')]);
+    push.mockImplementation(() => {});
+    put(DATA, fileOf([line('a', 8, '6.4'), line('b', 12, '7.1')]));
+    const saved = store.add(typed);
+    let atClose = '';
+    closeWindow.mockImplementation(async () => {
+      atClose = onDisk();
+    });
+    tauri = true;
+    store.closeWindow();
+    await vi.waitFor(() => expect(closeWindow).toHaveBeenCalled());
+    expect(atClose).toContain(saved.id);
+    expect(atClose).toContain(',b,');
   });
 
   it("does not mistake the app's own save for an outside edit", async () => {

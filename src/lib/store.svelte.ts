@@ -435,13 +435,22 @@ export class Store {
     this.toasts = this.toasts.filter((t) => t.id !== id);
   }
 
+  /** Resolves once the queue is empty, including saves queued while it waited. */
+  private async settle(): Promise<void> {
+    let waited: Promise<void>;
+    do {
+      waited = this.queue;
+      await waited.catch(() => {});
+    } while (waited !== this.queue);
+  }
+
   /** Both wait for queued saves, so a reading entered just before is not lost. */
   quit(): void {
-    if (isTauri) void this.queue.finally(() => quitApp());
+    if (isTauri) void this.settle().then(() => quitApp());
   }
 
   closeWindow(): void {
-    if (isTauri) void this.queue.finally(() => win.close());
+    if (isTauri) void this.settle().then(() => win.close());
   }
 }
 
