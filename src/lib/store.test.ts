@@ -343,6 +343,28 @@ describe('Store', () => {
     expect(store.rows[0].updated).toBe(before + 1);
   });
 
+  it('keeps a toast up while it is held, and for a moment after', () => {
+    vi.useFakeTimers();
+    try {
+      const store = new Store();
+      store.toast('Saved');
+      store.toast('Reading deleted', { label: 'Undo', run: () => {} });
+      const undo = store.toasts[1].id;
+      vi.advanceTimersByTime(5000);
+      expect(store.toasts.map((t) => t.text)).toEqual(['Reading deleted']);
+      store.holdToast(undo);
+      vi.advanceTimersByTime(60_000);
+      expect(store.toasts).toHaveLength(1);
+      store.resumeToast(undo);
+      vi.advanceTimersByTime(1400);
+      expect(store.toasts).toHaveLength(1);
+      vi.advanceTimersByTime(200);
+      expect(store.toasts).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('forgets deletions past their keep time when the file is opened', async () => {
     const old = '2020-01-01T00:00:00.000+00:00';
     put(DATA, fileOf([line('a', 8, '6.4'), `2020-01-01T08:00:00+00:00,6.0,mmol/L,,,ancient,${old},${old}`]));

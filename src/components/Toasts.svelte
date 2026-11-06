@@ -1,11 +1,28 @@
 <script lang="ts">
   import { fly, fade } from 'svelte/transition';
   import { app } from '../lib/store.svelte';
+
+  /** Resumes the countdown once neither the pointer nor keyboard focus is on the toast. */
+  function letGo(e: PointerEvent | FocusEvent, id: number): void {
+    const toast = e.currentTarget as HTMLElement;
+    const focused = e instanceof FocusEvent ? toast.contains(e.relatedTarget as Node | null) : toast.contains(document.activeElement);
+    const pointed = e instanceof FocusEvent && toast.matches(':hover');
+    if (!focused && !pointed) app.resumeToast(id);
+  }
 </script>
 
 <div class="toasts" aria-live="polite">
   {#each app.toasts as t (t.id)}
-    <div class="toast" in:fly={{ y: 10, duration: 220 }} out:fade={{ duration: 160 }}>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="toast"
+      in:fly={{ y: 10, duration: 220 }}
+      out:fade={{ duration: 160 }}
+      onpointerenter={() => app.holdToast(t.id)}
+      onpointerleave={(e) => letGo(e, t.id)}
+      onfocusin={() => app.holdToast(t.id)}
+      onfocusout={(e) => letGo(e, t.id)}
+    >
       <span>{t.text}</span>
       {#if t.action}
         {@const action = t.action}

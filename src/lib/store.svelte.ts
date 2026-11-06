@@ -149,6 +149,8 @@ export class Store {
   private onDisk = new Map<string, string>();
   private backedUp = '';
   private toastSeq = 0;
+  /** Each toast's time left on screen, and its timer while counting down. */
+  private toastClocks = new Map<number, { left: number; since: number; timer: ReturnType<typeof setTimeout> | null }>();
   private queue: Promise<void> = Promise.resolve();
 
   async init(): Promise<void> {
@@ -480,10 +482,31 @@ export class Store {
   toast(text: string, action?: Toast['action']): void {
     const id = ++this.toastSeq;
     this.toasts = [...this.toasts, { id, text, action }];
-    setTimeout(() => this.dismissToast(id), action ? 6000 : 3200);
+    this.toastClocks.set(id, { left: action ? 6000 : 3200, since: 0, timer: null });
+    this.resumeToast(id);
+  }
+
+  /** Stops a toast's countdown while the pointer or keyboard focus is on it. */
+  holdToast(id: number): void {
+    const clock = this.toastClocks.get(id);
+    if (!clock?.timer) return;
+    clearTimeout(clock.timer);
+    clock.timer = null;
+    clock.left -= Date.now() - clock.since;
+  }
+
+  /** Restarts the countdown, leaving at least a moment to read the toast again. */
+  resumeToast(id: number): void {
+    const clock = this.toastClocks.get(id);
+    if (!clock || clock.timer) return;
+    clock.since = Date.now();
+    clock.timer = setTimeout(() => this.dismissToast(id), Math.max(clock.left, 1500));
   }
 
   dismissToast(id: number): void {
+    const timer = this.toastClocks.get(id)?.timer;
+    if (timer) clearTimeout(timer);
+    this.toastClocks.delete(id);
     this.toasts = this.toasts.filter((t) => t.id !== id);
   }
 
