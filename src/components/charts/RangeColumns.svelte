@@ -92,6 +92,12 @@
   .hit {
     fill: transparent;
   }
+  /* Drawn over the hit areas, so they must let the pointer through to keep the tooltip open. */
+  .seg,
+  .none,
+  .tick {
+    pointer-events: none;
+  }
   .seg.low {
     fill: var(--low);
   }
