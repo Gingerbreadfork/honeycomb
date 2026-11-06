@@ -12,8 +12,9 @@
     </p>
     <div class="code">{req.code}</div>
     {#snippet footer()}
-      <button type="button" class="btn" onclick={() => app.sync.respondPair(req.request_id, false)}>Not now</button>
-      <button type="button" class="btn primary" data-autofocus onclick={() => app.sync.respondPair(req.request_id, true)}>Pair</button>
+      <!-- The request can arrive mid-typing, so a stray Enter must not accept it. -->
+      <button type="button" class="btn" data-autofocus onclick={() => app.sync.respondPair(req.request_id, false)}>Not now</button>
+      <button type="button" class="btn primary" onclick={() => app.sync.respondPair(req.request_id, true)}>Pair</button>
     {/snippet}
   </Dialog>
 {/if}
