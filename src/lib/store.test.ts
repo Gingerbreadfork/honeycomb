@@ -102,6 +102,18 @@ describe('Store', () => {
     expect(push).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps its own edit when an older engine event with the same stamp arrives late', async () => {
+    const { store, push } = await openStore([line('a', 8, '6.4', '2099-01-01T00:00:00.000+00:00')]);
+    const original = store.rows[0];
+    store.update('a', { note: 'z' });
+    push.mockClear();
+    inside(store).applySynced([{ ...original, note: 'a', updated: original.updated + 1 }]);
+    await inside(store).queue;
+    expect(store.rows[0].note).toBe('z');
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(onDisk()).toMatch(/,z,a,/);
+  });
+
   it('does not push again when the pull brought nothing the engine lacks', async () => {
     const { store, push } = await openStore([line('a', 8, '6.4')]);
     inside(store).applySynced([...store.rows, fromPhone('from-phone', 5)]);

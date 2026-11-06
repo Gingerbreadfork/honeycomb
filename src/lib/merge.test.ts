@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mergeSynced } from './merge';
+import { beats, mergeSynced } from './merge';
 import type { Reading } from './glucose';
 
 const r = (id: string, updated: number, note = ''): Reading => ({
@@ -29,9 +29,26 @@ describe('mergeSynced', () => {
     expect(newerRemote.ahead).toBe(false);
   });
 
-  it('takes the engine copy when the stamps match', () => {
-    const { rows, ahead } = mergeSynced([r('a', 20, 'local')], [r('a', 20, 'engine')]);
-    expect(rows[0].note).toBe('engine');
-    expect(ahead).toBe(false);
+  it('settles equal stamps the way the sync engine does', () => {
+    const localWins = mergeSynced([r('a', 20, 'z')], [r('a', 20, 'a')]);
+    expect(localWins.rows[0].note).toBe('z');
+    expect(localWins.ahead).toBe(true);
+    const engineWins = mergeSynced([r('a', 20, 'a')], [r('a', 20, 'z')]);
+    expect(engineWins.rows[0].note).toBe('z');
+    expect(engineWins.ahead).toBe(false);
+    const deleted = mergeSynced([r('a', 20, 'z')], [{ ...r('a', 20), deleted: 20 }]);
+    expect(deleted.rows[0].deleted).toBe(20);
+    expect(deleted.ahead).toBe(false);
+    const same = mergeSynced([r('a', 20, 'x')], [r('a', 20, 'x')]);
+    expect(same.ahead).toBe(false);
+  });
+});
+
+describe('beats', () => {
+  it('compares text by code point like the engine', () => {
+    // UTF-16 puts U+FF5E before the surrogate pair of U+1F600; code point and UTF-8 byte order do not.
+    expect(beats(r('a', 1, '\u{1F600}'), r('a', 1, '\uFF5E'))).toBe(true);
+    expect(beats(r('a', 1, '\uFF5E'), r('a', 1, '\u{1F600}'))).toBe(false);
+    expect(beats(r('a', 1, 'ab'), r('a', 1, 'a'))).toBe(true);
   });
 });
