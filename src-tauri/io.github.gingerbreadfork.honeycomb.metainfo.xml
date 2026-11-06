@@ -75,6 +75,16 @@
   </screenshots>
 
   <releases>
+    <release version="0.4.2" date="2026-11-07">
+      <description>
+        <p>
+          Saving, syncing and pairing are safer. Edits made in Honeycomb are no longer undone when
+          the readings file changes on disk, a file with lines Honeycomb can't read is left alone
+          until you choose what to do, and pairing with a nearby device completes only once both
+          people have confirmed the code.
+        </p>
+      </description>
+    </release>
     <release version="0.4.1" date="2026-10-25">
       <description>
         <p>
