@@ -174,30 +174,39 @@ function layoutOf(headers: string[]): Layout | null {
 
 const HEADER_SEARCH = 12;
 
-/** Meter exports often start with a title line, so the header is the first early row that names a time and a glucose column. */
-function findHeaderRow(rows: string[][]): number {
+/**
+ * Meter exports often start with a title line, so the header is the first early row that names a time and a glucose column.
+ * Without one, the widest early row stands in, and `named` is false.
+ */
+function findHeaderRow(rows: string[][]): { row: number; named: boolean } {
   const early = rows.slice(0, HEADER_SEARCH);
   const named = early.findIndex((r) => layoutOf(r.map((h) => h.trim().toLowerCase())) !== null);
-  if (named >= 0) return named;
+  if (named >= 0) return { row: named, named: true };
   const widest = Math.max(...early.map((r) => r.length));
-  return early.findIndex((r) => r.length === widest);
+  return { row: early.findIndex((r) => r.length === widest), named: false };
 }
 
 export function parseReadings(text: string, fallbackUnit: Unit, choice: ColumnChoice = {}): ParsedFile {
   const lines = parseCsvRows(text);
   const all = lines.map((r) => r.cells);
   if (!all.length) return { readings: [], skipped: 0, skippedLines: [], headers: [], time: -1, glucose: -1 };
-  const headerRow = findHeaderRow(all);
-  const shown = all[headerRow].map((h) => h.trim());
+  const header = findHeaderRow(all);
+  const shown = all[header.row].map((h) => h.trim());
   const headers = shown.map((h) => h.toLowerCase());
-  const rows = all.slice(headerRow + 1);
-  const lineOf = (i: number) => lines[headerRow + 1 + i].line;
+  // A stand-in header may be the first reading, so it is read as data too, and not counted when it isn't one.
+  const start = header.named ? header.row + 1 : header.row;
+  const rows = all.slice(start);
+  const lineOf = (i: number) => lines[start + i].line;
+  const counts = (i: number) => header.named || i > 0;
   const guessed = layoutOf(headers);
   const timeCol = choice.time ?? guessed?.time ?? -1;
   const clockCol = choice.time === undefined || choice.time === guessed?.time ? (guessed?.clock ?? -1) : -1;
   const glucoseCols = choice.glucose !== undefined ? [choice.glucose] : (guessed?.glucose ?? []);
   const found = { headers: shown, time: timeCol, glucose: glucoseCols[0] ?? -1 };
-  if (timeCol < 0 || !glucoseCols.length) return { readings: [], skipped: rows.length, skippedLines: rows.map((_, i) => lineOf(i)), ...found };
+  if (timeCol < 0 || !glucoseCols.length) {
+    const skippedLines = rows.flatMap((_, i) => (counts(i) ? [lineOf(i)] : []));
+    return { readings: [], skipped: skippedLines.length, skippedLines, ...found };
+  }
 
   const unitCol = findCol(headers, COLS.unit);
   const contextCol = findCol(headers, COLS.context);
@@ -216,7 +225,7 @@ export function parseReadings(text: string, fallbackUnit: Unit, choice: ColumnCh
     const valueText = (r[glucoseCol] ?? '').trim();
     const value = Number(valueText.replace(',', '.'));
     if (!stamp || !Number.isFinite(value) || value <= 0) {
-      skippedLines.push(lineOf(i));
+      if (counts(i)) skippedLines.push(lineOf(i));
       continue;
     }
     const { time, offset } = stamp;

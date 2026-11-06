@@ -26,6 +26,17 @@ describe('csv', () => {
     expect(parsed.skippedLines).toEqual([5, 7]);
   });
 
+  it('keeps the first reading of a file without a header once columns are picked', () => {
+    const text = 'Glucose export\n2026-09-15 08:00,6.4\n2026-09-15 09:00,7.1\n2026-09-15 10:00,5.5\n';
+    expect(parseReadings(text, 'mmol/L')).toMatchObject({ readings: [], skipped: 2, headers: ['2026-09-15 08:00', '6.4'] });
+    const picked = parseReadings(text, 'mmol/L', { time: 0, glucose: 1 });
+    expect(picked.readings.map((r) => r.mmol)).toEqual([6.4, 7.1, 5.5]);
+    expect(picked.skipped).toBe(0);
+    const unnamed = parseReadings('Datum,Wert\n2026-09-15 08:00,6.4\n', 'mmol/L', { time: 0, glucose: 1 });
+    expect(unnamed.readings).toHaveLength(1);
+    expect(unnamed.skipped).toBe(0);
+  });
+
   it('round-trips readings including notes with commas and newlines', () => {
     const text = readingsToCsv([
       { id: '1', time: new Date(2026, 8, 15, 8, 42), mmol: 6.4, unit: 'mmol/L', context: 'fasting', note: 'toast, jam\nlate', updated: 1000, deleted: null },
