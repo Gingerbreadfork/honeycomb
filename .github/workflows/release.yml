@@ -58,13 +58,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Honeycomb ${GITHUB_REF_NAME#v}" --generate-notes 2>/dev/null || true
-          uploaded=0
-          for f in src-tauri/target/release/bundle/rpm/*.rpm src-tauri/target/release/bundle/deb/*.deb; do
-            if gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" "$f"; then uploaded=1; else echo "$(basename "$f") already on the release, keeping the published copy"; fi
-          done
-          # Checksums only make sense for the files this run actually published.
-          [ "$uploaded" = 1 ] && gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" src-tauri/target/release/bundle/SHA256SUMS-linux || true
+          cd src-tauri/target/release/bundle
+          bash "$GITHUB_WORKSPACE/scripts/attach-to-release.sh" SHA256SUMS-linux rpm/*.rpm deb/*.deb
 
   windows:
     needs: verify
@@ -110,13 +105,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Honeycomb ${GITHUB_REF_NAME#v}" --generate-notes 2>/dev/null || true
-          uploaded=0
-          for f in src-tauri/target/release/bundle/nsis/*-setup.exe src-tauri/target/release/bundle/nsis/*-setup.exe.sig src-tauri/target/release/bundle/nsis/latest.json; do
-            [ -f "$f" ] || continue
-            if gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" "$f"; then uploaded=1; else echo "$(basename "$f") already on the release, keeping the published copy"; fi
-          done
-          [ "$uploaded" = 1 ] && gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" src-tauri/target/release/bundle/SHA256SUMS-windows || true
+          cd src-tauri/target/release/bundle
+          files=(nsis/*-setup.exe)
+          # Only a signed build has the update feed.
+          if [ -f nsis/latest.json ]; then files+=(nsis/*-setup.exe.sig nsis/latest.json); fi
+          bash "$GITHUB_WORKSPACE/scripts/attach-to-release.sh" SHA256SUMS-windows "${files[@]}"
 
   android:
     needs: verify
@@ -161,9 +154,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Honeycomb ${GITHUB_REF_NAME#v}" --generate-notes 2>/dev/null || true
-          uploaded=0
-          for f in src-tauri/target/release/bundle/android/*.apk; do
-            if gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" "$f"; then uploaded=1; else echo "$(basename "$f") already on the release, keeping the published copy"; fi
-          done
-          [ "$uploaded" = 1 ] && gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" src-tauri/target/release/bundle/android/SHA256SUMS-android || true
+          cd src-tauri/target/release/bundle/android
+          bash "$GITHUB_WORKSPACE/scripts/attach-to-release.sh" SHA256SUMS-android *.apk
