@@ -113,7 +113,7 @@
   }
 
   function onkey(e: KeyboardEvent): void {
-    if (!points.length) return;
+    if (!interactive || !points.length) return;
     if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
       e.preventDefault();
       const d = e.key === 'ArrowRight' ? 1 : -1;
@@ -130,7 +130,7 @@
     viewBox="0 0 {width} {height}"
     role={interactive ? 'application' : 'img'}
     aria-label="Readings over time"
-    tabindex={interactive ? 0 : -1}
+    tabindex={interactive ? 0 : undefined}
     onpointermove={onmove}
     onpointerleave={() => (hover = null)}
     onkeydown={onkey}
