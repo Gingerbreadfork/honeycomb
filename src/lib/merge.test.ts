@@ -51,4 +51,12 @@ describe('beats', () => {
     expect(beats(r('a', 1, '\uFF5E'), r('a', 1, '\u{1F600}'))).toBe(false);
     expect(beats(r('a', 1, 'ab'), r('a', 1, 'a'))).toBe(true);
   });
+
+  it('settles on the later moment when only the time differs', () => {
+    const at = (hour: number, offset: number): Reading => ({ ...r('a', 1), time: new Date(2026, 8, 15, hour, 0, 0, 400), offset });
+    expect(beats(at(9, 600), at(8, 600))).toBe(true);
+    expect(beats(at(8, 600), at(9, 600))).toBe(false);
+    expect(beats(at(9, 660), at(8, 600))).toBe(false);
+    expect(beats(at(8, 600), at(9, 660))).toBe(false);
+  });
 });

@@ -113,7 +113,14 @@ enum Message {
     PairOk { device: DeviceInfo, addr: EndpointAddr },
     PairRejected { reason: String },
     Sync { device: DeviceInfo, addr: EndpointAddr, rows: Vec<Row> },
-    Check { device: DeviceInfo, addr: EndpointAddr, digest: u64 },
+    /// `digest` leaves reading times out and is what older versions compare; `full_digest` covers them too.
+    Check {
+        device: DeviceInfo,
+        addr: EndpointAddr,
+        digest: u64,
+        #[serde(default)]
+        full_digest: Option<u64>,
+    },
     Same { device: DeviceInfo, addr: EndpointAddr },
     Differs,
     Forget,
@@ -312,10 +319,50 @@ fn decode_code(text: &str) -> Result<PairCode, String> {
     postcard::from_bytes(&bytes).map_err(|_| "That doesn't look like a pairing code".to_string())
 }
 
+/// Seconds since the epoch for a time written like `2026-09-15T08:00:00+10:00`, so two ways of
+/// writing the same moment compare equal. None when the text is not in that form.
+fn taken_secs(time: &str) -> Option<i64> {
+    let t = time.as_bytes();
+    let num = |at: usize, len: usize| -> Option<i64> {
+        let digits = t.get(at..at + len)?;
+        digits.iter().all(u8::is_ascii_digit).then(|| digits.iter().fold(0, |n, d| n * 10 + i64::from(d - b'0')))
+    };
+    let at = |i: usize, c: u8| t.get(i) == Some(&c);
+    if !(at(4, b'-') && at(7, b'-') && at(10, b'T') && at(13, b':') && at(16, b':')) {
+        return None;
+    }
+    let (year, month, day) = (num(0, 4)?, num(5, 2)?, num(8, 2)?);
+    let clock = num(11, 2)? * 3600 + num(14, 2)? * 60 + num(17, 2)?;
+    let mut rest = 19;
+    if at(rest, b'.') {
+        rest += 1;
+        while t.get(rest).is_some_and(u8::is_ascii_digit) {
+            rest += 1;
+        }
+    }
+    let offset_mins = match t.get(rest) {
+        Some(b'Z') if rest + 1 == t.len() => 0,
+        Some(&sign @ (b'+' | b'-')) if rest + 6 == t.len() && at(rest + 3, b':') => {
+            let mins = num(rest + 1, 2)? * 60 + num(rest + 4, 2)?;
+            if sign == b'-' { -mins } else { mins }
+        }
+        _ => return None,
+    };
+    // Days since 1970-01-01, counting years from March so the leap day falls last.
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = y.div_euclid(400);
+    let year_of_era = y - era * 400;
+    let day_of_year = (153 * ((month + 9) % 12) + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    let days = era * 146_097 + day_of_era - 719_468;
+    Some(days * 86_400 + clock - offset_mins * 60)
+}
+
 /// Rows with the same stamp are ordered by content, so every device settles on the same one.
+/// `beats` in merge.ts keeps the same order.
 fn beats(incoming: &Row, existing: &Row) -> bool {
-    fn key(r: &Row) -> (u64, bool, u64, &str, &str, &str) {
-        (r.updated, r.deleted.is_some(), r.mmol.to_bits(), &r.unit, &r.context, &r.note)
+    fn key(r: &Row) -> (u64, bool, u64, &str, &str, &str, Option<i64>) {
+        (r.updated, r.deleted.is_some(), r.mmol.to_bits(), &r.unit, &r.context, &r.note, taken_secs(&r.time))
     }
     key(incoming) > key(existing)
 }
@@ -330,9 +377,9 @@ fn live_rows(rows: &BTreeMap<String, Row>) -> Vec<Row> {
     rows.values().filter(|r| !expired(r, now)).cloned().collect()
 }
 
-/// Fingerprint of everything that syncs. `time` is left out: devices may write the same instant
-/// differently, and a changed time always comes with a new `updated`.
-fn digest_rows(rows: &BTreeMap<String, Row>) -> u64 {
+/// Fingerprint of everything that syncs. Times count by the moment they name, since devices may
+/// write the same moment differently. With `times` false they are left out, as older versions do.
+fn digest_rows(rows: &BTreeMap<String, Row>, times: bool) -> u64 {
     let now = now_ms();
     let mut h: u64 = 0xcbf29ce484222325;
     let mut feed = |bytes: &[u8]| {
@@ -348,6 +395,12 @@ fn digest_rows(rows: &BTreeMap<String, Row>) -> u64 {
         feed(r.unit.as_bytes());
         feed(r.context.as_bytes());
         feed(r.note.as_bytes());
+        if times {
+            match taken_secs(&r.time) {
+                Some(secs) => feed(&secs.to_le_bytes()),
+                None => feed(r.time.as_bytes()),
+            }
+        }
     }
     h
 }
@@ -910,8 +963,14 @@ impl SyncEngine {
             return Ok(());
         }
         let (mut send, msg) = match msg {
-            Message::Check { device, addr, digest } => {
-                let same = digest_rows(&self.inner.lock().unwrap().rows) == digest;
+            Message::Check { device, addr, digest, full_digest } => {
+                let same = {
+                    let g = self.inner.lock().unwrap();
+                    match full_digest {
+                        Some(full) => digest_rows(&g.rows, true) == full,
+                        None => digest_rows(&g.rows, false) == digest,
+                    }
+                };
                 if same {
                     self.note_synced(&remote.to_string(), &device, addr);
                     let _ = reply(&mut send, &Message::Same { device: self.device(), addr: self.my_addr() }).await;
@@ -1020,8 +1079,11 @@ impl SyncEngine {
         if self.inner.lock().unwrap().full_only.contains(&peer.id) {
             return self.exchange_rows(&conn, peer).await;
         }
-        let digest = digest_rows(&self.inner.lock().unwrap().rows);
-        let check = Message::Check { device: self.device(), addr: self.my_addr(), digest };
+        let (digest, full) = {
+            let g = self.inner.lock().unwrap();
+            (digest_rows(&g.rows, false), digest_rows(&g.rows, true))
+        };
+        let check = Message::Check { device: self.device(), addr: self.my_addr(), digest, full_digest: Some(full) };
         let answer = within(IO_TIMEOUT, request(&conn, &check, MAX_PAIR_MESSAGE)).await;
         if self.turned_away(&conn, peer, &answer) {
             return Err("not paired".into());
@@ -1214,6 +1276,20 @@ mod tests {
         });
     }
 
+    #[test]
+    fn a_time_edited_on_both_devices_with_the_same_stamp_settles() {
+        tauri::async_runtime::block_on(async {
+            let a = device("a", true).await;
+            let b = device("b", true).await;
+            pair(&a, &b);
+            a.engine.set_rows(vec![at("r", 10, "2026-09-15T08:00:00+10:00")]);
+            b.engine.set_rows(vec![at("r", 10, "2026-09-15T09:00:00+10:00")]);
+            a.engine.sync_all().await;
+            assert_eq!(full_exchanges(&a), 1);
+            assert_eq!(a.engine.inner.lock().unwrap().rows, b.engine.inner.lock().unwrap().rows);
+        });
+    }
+
     /// Answers the way 0.1.3 does: a full exchange works, anything else gets hung up on.
     async fn old_version_peer(rows: Vec<Row>) -> (Endpoint, DeviceInfo) {
         let endpoint = Endpoint::builder(presets::Minimal).relay_mode(RelayMode::Disabled).alpns(vec![ALPN_SYNC.to_vec()]).bind().await.unwrap();
@@ -1259,7 +1335,7 @@ mod tests {
         let mut with = BTreeMap::from([("a".to_string(), row("a", 10, None))]);
         let without = with.clone();
         with.insert("stale".into(), stale.clone());
-        assert_eq!(digest_rows(&with), digest_rows(&without));
+        assert_eq!(digest_rows(&with, true), digest_rows(&without, true));
         assert_eq!(live_rows(&with).len(), 1);
 
         let mut holding_live = BTreeMap::from([("stale".to_string(), row("stale", 1, None))]);
@@ -1352,6 +1428,55 @@ mod tests {
         merge_rows(&mut b, vec![edited]);
         assert_eq!(a, b);
         assert!(a["a"].deleted.is_some());
+    }
+
+    fn at(id: &str, updated: u64, time: &str) -> Row {
+        Row { time: time.into(), ..row(id, updated, None) }
+    }
+
+    #[test]
+    fn reading_times_are_read_as_moments() {
+        assert_eq!(taken_secs("2026-09-15T08:00:00+10:00"), Some(1_789_423_200));
+        assert_eq!(taken_secs("2026-09-14T22:00:00.000Z"), Some(1_789_423_200));
+        assert_eq!(taken_secs("2000-02-29T23:59:59-05:30"), Some(951_888_599));
+        assert_eq!(taken_secs("1969-12-31T23:59:59+00:00"), Some(-1));
+        assert_eq!(taken_secs("2026-09-15 08:00"), None);
+        assert_eq!(taken_secs("2026-09-15T08:00:00+10:00 "), None);
+    }
+
+    #[test]
+    fn equal_stamps_with_different_times_converge() {
+        let early = at("a", 10, "2026-09-15T08:00:00+10:00");
+        let late = at("a", 10, "2026-09-15T09:00:00+10:00");
+        let mut a = BTreeMap::from([("a".to_string(), early.clone())]);
+        let mut b = BTreeMap::from([("a".to_string(), late.clone())]);
+        assert_ne!(digest_rows(&a, true), digest_rows(&b, true));
+        assert_eq!(digest_rows(&a, false), digest_rows(&b, false));
+        merge_rows(&mut a, vec![late]);
+        merge_rows(&mut b, vec![early]);
+        assert_eq!(a, b);
+        assert_eq!(a["a"].time, "2026-09-15T09:00:00+10:00");
+    }
+
+    #[test]
+    fn the_same_moment_written_another_way_is_not_a_change() {
+        let here = at("a", 10, "2026-09-15T08:00:00+10:00");
+        let there = at("a", 10, "2026-09-14T22:00:00+00:00");
+        assert!(!beats(&here, &there) && !beats(&there, &here));
+        let a = BTreeMap::from([("a".to_string(), here)]);
+        let b = BTreeMap::from([("a".to_string(), there)]);
+        assert_eq!(digest_rows(&a, true), digest_rows(&b, true));
+    }
+
+    #[test]
+    fn checks_from_older_versions_still_read() {
+        let device = DeviceInfo { id: "x".into(), name: "x".into() };
+        let addr = EndpointAddr::new(SecretKey::generate().public());
+        let mut json = serde_json::to_value(Message::Check { device, addr, digest: 7, full_digest: Some(8) }).unwrap();
+        json.as_object_mut().unwrap().remove("full_digest");
+        assert!(matches!(serde_json::from_value(json.clone()), Ok(Message::Check { digest: 7, full_digest: None, .. })));
+        json.as_object_mut().unwrap().insert("added_later".into(), serde_json::json!(1));
+        assert!(matches!(serde_json::from_value(json), Ok(Message::Check { digest: 7, .. })), "unknown fields are ignored");
     }
 
     #[test]

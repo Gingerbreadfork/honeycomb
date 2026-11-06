@@ -1,4 +1,5 @@
 import type { Reading } from './glucose';
+import { instantMs } from './time';
 
 const byTime = (a: Reading, b: Reading) => a.time.getTime() - b.time.getTime();
 
@@ -11,6 +12,9 @@ function compareText(a: string, b: string): number {
   return a.length - b.length;
 }
 
+/** Whole seconds, as the engine reads the time the app sends it. */
+const takenSecs = (r: Reading) => Math.floor(instantMs(r.time, r.offset) / 1000);
+
 /** True when `a` replaces `b`. Matches `beats` in sync.rs, so both settle a tie in `updated` on the same copy. */
 export function beats(a: Reading, b: Reading): boolean {
   const order =
@@ -19,7 +23,8 @@ export function beats(a: Reading, b: Reading): boolean {
     a.mmol - b.mmol ||
     compareText(a.unit, b.unit) ||
     compareText(a.context, b.context) ||
-    compareText(a.note, b.note);
+    compareText(a.note, b.note) ||
+    takenSecs(a) - takenSecs(b);
   return order > 0;
 }
 
