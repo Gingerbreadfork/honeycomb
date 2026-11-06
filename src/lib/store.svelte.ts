@@ -19,7 +19,7 @@ import {
 import { SyncState } from './sync.svelte';
 import { planImport, type ImportPlan } from './import';
 import { mergeSynced } from './merge';
-import { dedupeIds, dropExpiredTombstones, reconcileExternal } from './reconcile';
+import { dedupeIds, diskKeys, dropExpiredTombstones, reconcileExternal } from './reconcile';
 import { pickCsvText } from './platform';
 import { dayKey, setHour12, systemHour12 } from './time';
 import { isNewer, latestRelease, type Release } from './update';
@@ -128,7 +128,7 @@ export class Store {
   private fileMtime: number | null = null;
   private lastUpdateCheck = 0;
   private lastUpdateTry = 0;
-  private writtenIds = new Set<string>();
+  private onDisk = new Map<string, string>();
   private backedUp = '';
   private toastSeq = 0;
   private queue: Promise<void> = Promise.resolve();
@@ -283,7 +283,7 @@ export class Store {
       let rows = current.rows;
       let rewrite = unique.changed || current.changed;
       if (mode === 'external') {
-        const edit = reconcileExternal(this.rows, rows, this.writtenIds, parsed.skipped === 0);
+        const edit = reconcileExternal(this.rows, rows, this.onDisk, parsed.skipped === 0);
         rows = edit.rows;
         rewrite = true;
         if (edit.kept) this.toast(`Kept ${edit.kept} reading${edit.kept === 1 ? '' : 's'} missing from the file. Delete them here to remove them everywhere.`);
@@ -291,7 +291,7 @@ export class Store {
       this.rows = rows;
       this.rowsFile = path;
       this.fileMtime = mtime;
-      this.writtenIds = new Set(parsed.readings.map((r) => r.id));
+      this.onDisk = diskKeys(parsed.readings);
       if (mode === 'switch') this.sync.replace(rows);
       else if (this.ready) this.sync.push(rows);
       if (rewrite) void this.persist(false);
@@ -338,7 +338,7 @@ export class Store {
         const mtime = await writeText(file, readingsToCsv(snapshot));
         if (file !== this.rowsFile) return;
         this.fileMtime = mtime;
-        this.writtenIds = new Set(snapshot.map((r) => r.id));
+        this.onDisk = diskKeys(snapshot);
       } catch (e) {
         this.toast(`Could not save: ${String(e)}`);
       }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dedupeIds, dropExpiredTombstones, reconcileExternal, TOMBSTONE_KEEP_MS } from './reconcile';
+import { dedupeIds, diskKeys, dropExpiredTombstones, reconcileExternal, TOMBSTONE_KEEP_MS } from './reconcile';
 import type { Reading } from './glucose';
 
 const r = (id: string, minutes: number, mmol: number, updated = 100): Reading => ({
@@ -36,7 +36,7 @@ describe('dropExpiredTombstones', () => {
 
 describe('reconcileExternal', () => {
   const prev = [r('a', 0, 6.4), r('b', 30, 7.1), r('c', 60, 5.5)];
-  const saved = new Set(['a', 'b', 'c']);
+  const saved = diskKeys(prev);
 
   it('stamps a hand-edited row so the edit wins on other devices', () => {
     const { rows } = reconcileExternal(prev, [r('a', 0, 6.4), r('b', 30, 9.9), r('c', 60, 5.5)], saved, true, 900);
@@ -61,8 +61,23 @@ describe('reconcileExternal', () => {
     expect(unreadable.kept).toBe(2);
     expect(unreadable.rows.every((x) => !x.deleted)).toBe(true);
     const many = Array.from({ length: 40 }, (_, i) => r(`m${i}`, i, 6));
-    const gutted = reconcileExternal(many, many.slice(0, 5), new Set(many.map((x) => x.id)), true, 900);
+    const gutted = reconcileExternal(many, many.slice(0, 5), diskKeys(many), true, 900);
     expect(gutted.kept).toBe(35);
     expect(gutted.rows.filter((x) => x.deleted)).toHaveLength(0);
+  });
+
+  it('keeps a newer copy made here when its line is as the app last wrote it', () => {
+    const edited = { ...r('a', 0, 6.4, 500), note: 'edited here' };
+    const deleted = { ...r('b', 30, 7.1, 500), deleted: 500 };
+    const { rows } = reconcileExternal([edited, deleted, prev[2]], [...prev, r('new', 90, 8.0)], saved, true, 900);
+    expect(rows.find((x) => x.id === 'a')).toBe(edited);
+    expect(rows.find((x) => x.id === 'b')).toBe(deleted);
+    expect(rows.find((x) => x.id === 'new')).toBeDefined();
+  });
+
+  it('lets the hand edit win when the app changed the same reading', () => {
+    const edited = { ...r('b', 30, 7.1, 500), note: 'edited here' };
+    const { rows } = reconcileExternal([prev[0], edited, prev[2]], [prev[0], r('b', 30, 9.9), prev[2]], saved, true, 900);
+    expect(rows.find((x) => x.id === 'b')).toMatchObject({ mmol: 9.9, note: '', updated: 900 });
   });
 });

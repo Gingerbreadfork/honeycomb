@@ -141,6 +141,28 @@ describe('Store', () => {
     expect(onDisk()).toContain('from-phone');
   });
 
+  it('keeps an edit made here when the file changed before it was saved', async () => {
+    const { store } = await openStore([line('a', 8, '6.4')]);
+    put(DATA, fileOf([line('a', 8, '6.4'), line('b', 12, '7.1')]));
+    store.update('a', { note: 'edited here' });
+    await inside(store).queue;
+    await inside(store).queue;
+    expect(store.rows.find((r) => r.id === 'a')!.note).toBe('edited here');
+    expect(store.readings.map((r) => r.id)).toEqual(['a', 'b']);
+    expect(onDisk()).toMatch(/,edited here,a,/);
+  });
+
+  it('keeps a deletion that synced in when the file changed before it was saved', async () => {
+    const { store } = await openStore([line('a', 8, '6.4')]);
+    put(DATA, fileOf([line('a', 8, '6.4'), line('b', 12, '7.1')]));
+    const a = store.rows[0];
+    inside(store).applySynced([{ ...a, deleted: a.updated + 10, updated: a.updated + 10 }]);
+    await inside(store).queue;
+    await inside(store).queue;
+    expect(store.readings.map((r) => r.id)).toEqual(['b']);
+    expect(onDisk()).toMatch(/,a,[^,]+,\d{4}-/);
+  });
+
   it("does not mistake the app's own save for an outside edit", async () => {
     const { store } = await openStore([line('a', 8, '6.4')]);
     store.add(typed);

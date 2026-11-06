@@ -36,11 +36,21 @@ export interface ExternalEdit {
   kept: number;
 }
 
-/** Turns a hand-edited file into changes that sync: edits get a fresh stamp, removed lines become tombstones. */
+/** Each row's `contentKey` as the file held it when the app last read or wrote it. */
+export function diskKeys(rows: Reading[]): Map<string, string> {
+  const keys = new Map<string, string>();
+  for (const r of rows) if (!keys.has(r.id)) keys.set(r.id, contentKey(r));
+  return keys;
+}
+
+/**
+ * Turns a hand-edited file into changes that sync: edits get a fresh stamp, removed lines become tombstones.
+ * A line still as `onDisk` recorded it was not edited, so the app's own newer copy of that row stays.
+ */
 export function reconcileExternal(
   prev: Reading[],
   loaded: Reading[],
-  writtenIds: ReadonlySet<string>,
+  onDisk: ReadonlyMap<string, string>,
   allLinesRead: boolean,
   now = Date.now(),
 ): ExternalEdit {
@@ -50,10 +60,13 @@ export function reconcileExternal(
     seen.add(f.id);
     const p = before.get(f.id);
     if (!p || f.updated > p.updated) return f;
-    return contentKey(p) === contentKey(f) ? p : { ...f, updated: after(p, now) };
+    const key = contentKey(f);
+    const last = onDisk.get(f.id);
+    if (key === contentKey(p) || last === undefined || key === last) return p;
+    return { ...f, updated: after(p, now) };
   });
   const missing = prev.filter((p) => !seen.has(p.id));
-  const removed = missing.filter((p) => !p.deleted && writtenIds.has(p.id));
+  const removed = missing.filter((p) => !p.deleted && onDisk.has(p.id));
   const live = prev.filter((p) => !p.deleted).length;
   const trust = allLinesRead && removed.length <= Math.max(10, Math.floor(live / 10));
   for (const p of missing) {
