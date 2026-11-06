@@ -1070,17 +1070,20 @@ impl SyncEngine {
             let g = self.inner.lock().unwrap();
             g.peers.iter().filter(|p| !g.unpaired.contains(&p.id)).cloned().collect()
         };
-        for peer in peers {
-            self.inner.lock().unwrap().syncing.insert(peer.id.clone(), true);
-            self.emit_state();
-            let ok = self.sync_peer(&peer).await.is_ok();
-            {
-                let mut g = self.inner.lock().unwrap();
-                g.syncing.insert(peer.id.clone(), false);
-                g.online.insert(peer.id.clone(), ok);
-            }
-            self.emit_state();
+        // Side by side, so a device that is out of reach doesn't hold up the rest.
+        n0_future::join_all(peers.iter().map(|peer| self.sync_one(peer))).await;
+    }
+
+    async fn sync_one(&self, peer: &Peer) {
+        self.inner.lock().unwrap().syncing.insert(peer.id.clone(), true);
+        self.emit_state();
+        let ok = self.sync_peer(peer).await.is_ok();
+        {
+            let mut g = self.inner.lock().unwrap();
+            g.syncing.insert(peer.id.clone(), false);
+            g.online.insert(peer.id.clone(), ok);
         }
+        self.emit_state();
     }
 
     /// Tries the saved and nearby addresses first, then looks the device up by its id alone.
@@ -1278,6 +1281,22 @@ mod tests {
             eventually("b shows the rows it received", || b.ui.saw("sync:rows") == 1).await;
             let peer = &a.engine.snapshot().peers[0];
             assert!(peer.online && peer.last_sync.is_some() && !peer.unpaired);
+        });
+    }
+
+    #[test]
+    fn several_peers_sync_in_one_pass() {
+        tauri::async_runtime::block_on(async {
+            let a = device("a", true).await;
+            let b = device("b", true).await;
+            let c = device("c", true).await;
+            pair(&a, &b);
+            pair(&a, &c);
+            b.engine.set_rows(vec![row("from-b", 20, None)]);
+            c.engine.set_rows(vec![row("from-c", 30, None)]);
+            a.engine.sync_all().await;
+            assert_eq!(ids(&a), ["from-b", "from-c"]);
+            assert!(a.engine.snapshot().peers.iter().all(|p| p.online && !p.syncing));
         });
     }
 
