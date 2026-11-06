@@ -78,7 +78,19 @@
         {#if app.loadError}
           <p class="muted">{app.dataPath}</p>
           <p class="muted">Nothing will be saved until it can be read, so the file is left as it is.</p>
-          <button type="button" class="btn primary" onclick={() => app.loadReadings()}>Try again</button>
+          {#if app.unreadLines}
+            {@const them = app.unreadLines === 1 ? 'it' : 'them'}
+            <p class="muted">
+              Fix {them} in a text editor and try again, or open the file without {them}. A copy of the file goes into the backups first, and
+              {app.unreadLines === 1 ? 'the line is' : 'the lines are'} left out the next time Honeycomb saves.
+            </p>
+          {/if}
+          <div class="actions">
+            <button type="button" class="btn primary" onclick={() => app.retryLoad()}>Try again</button>
+            {#if app.unreadLines}
+              <button type="button" class="btn" onclick={() => app.retryLoad(true)}>Open without {app.unreadLines === 1 ? 'it' : 'them'}</button>
+            {/if}
+          </div>
         {/if}
       </div>
     {:else if app.ready}
@@ -164,7 +176,10 @@
   .trouble p {
     overflow-wrap: anywhere;
   }
-  .trouble .btn {
+  .trouble .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
     margin-top: 8px;
   }
   .edge {

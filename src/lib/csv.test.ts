@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseCsv, readingsFromCsv, readingsToCleanCsv, readingsToCsv, serializeCsv } from './csv';
+import { parseCsv, parseReadings, readingsFromCsv, readingsToCleanCsv, readingsToCsv, serializeCsv } from './csv';
 
 describe('csv', () => {
   it('parses quoted fields, escaped quotes and CRLF', () => {
@@ -8,6 +8,22 @@ describe('csv', () => {
       ['a', 'b'],
       ['x, y', 'say "hi"'],
     ]);
+  });
+
+  it('reports the file line of each row it could not read', () => {
+    const text = [
+      'time,glucose,note',
+      '2026-09-15 08:00,6.4,"two',
+      'lines"',
+      '',
+      '2026-09-15 09:00,typo,',
+      '2026-09-15 10:00,7.0,',
+      'not a time,5.0,',
+    ].join('\r\n');
+    const parsed = parseReadings(text, 'mmol/L');
+    expect(parsed.readings).toHaveLength(2);
+    expect(parsed.skipped).toBe(2);
+    expect(parsed.skippedLines).toEqual([5, 7]);
   });
 
   it('round-trips readings including notes with commas and newlines', () => {

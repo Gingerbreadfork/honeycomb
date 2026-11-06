@@ -212,6 +212,63 @@ describe('Store', () => {
     expect(store.readings.map((r) => r.id)).toEqual(['a']);
   });
 
+  it('leaves a file with lines it cannot read alone until told to open it without them', async () => {
+    put(DATA, fileOf([line('a', 8, '6.4'), line('needs-repair', 9, 'typo')]));
+    const original = onDisk();
+    const store = new Store();
+    store.paths = { data_file: DATA, settings_file: '/config/settings.json' };
+    await store.loadReadings();
+    store.ready = true;
+    expect(store.loadError).toBe("Line 3 couldn't be read.");
+    expect(store.unreadLines).toBe(1);
+    put(DATA, original);
+    await inside(store).checkExternalChange();
+    store.add(typed);
+    await inside(store).queue;
+    expect(onDisk()).toBe(original);
+    expect(store.loadError).not.toBeNull();
+
+    await store.retryLoad(true);
+    expect(store.loadError).toBeNull();
+    expect(store.unreadLines).toBe(0);
+    expect(backupFile).toHaveBeenCalledWith(DATA, expect.stringMatching(/^\d{4}-\d{2}-\d{2}-\d{6}$/), 14);
+    expect(store.readings.map((r) => r.id)).toEqual(['a']);
+  });
+
+  it('will not open a file without time and glucose columns', async () => {
+    put(DATA, 'name,email\nAnn,ann@example.com\n');
+    const store = new Store();
+    store.paths = { data_file: DATA, settings_file: '/config/settings.json' };
+    await store.loadReadings();
+    expect(store.loadError).toMatch(/doesn't look like a readings file/);
+    expect(store.unreadLines).toBe(0);
+  });
+
+  it('backs up a hand-edited file before leaving out a line it cannot read', async () => {
+    const { store } = await openStore([line('a', 8, '6.4')]);
+    put(DATA, fileOf([line('a', 8, '6.4'), line('b', 12, 'typo')]));
+    let backedUp = '';
+    backupFile.mockImplementationOnce(async () => {
+      backedUp = onDisk();
+    });
+    await inside(store).checkExternalChange();
+    await inside(store).queue;
+    expect(backedUp).toContain('typo');
+    expect(store.toasts.map((t) => t.text)).toContain("Line 3 couldn't be read, so it was left out. The file as it was is in the backups.");
+    expect(store.readings.map((r) => r.id)).toEqual(['a']);
+  });
+
+  it('tries a file that failed to load after a switch the same way again', async () => {
+    const { store, replace } = await openStore([line('old', 8, '6.4')]);
+    const other = '/elsewhere/other.csv';
+    put(other, fileOf([line('other', 9, '8.0'), line('bad', 10, 'typo')]));
+    await store.updateSettings({ dataFile: other });
+    expect(store.loadError).toBe("Line 3 couldn't be read.");
+    await store.retryLoad(true);
+    expect(store.readings.map((r) => r.id)).toEqual(['other']);
+    expect(replace).toHaveBeenCalledTimes(1);
+  });
+
   it('starts the engine over when another data file is chosen', async () => {
     const { store, push, replace } = await openStore([line('old', 8, '6.4')]);
     put('/elsewhere/other.csv', fileOf([line('other', 9, '8.0')]));

@@ -71,6 +71,21 @@ const DEFAULTS: Settings = {
   checkUpdates: false,
 };
 
+/** Names the lines of the data file that could not be read. */
+function unreadable(lines: number[]): string {
+  if (lines.length === 1) return `Line ${lines[0]} couldn't be read`;
+  if (lines.length <= 3) return `Lines ${lines.slice(0, -1).join(', ')} and ${lines.at(-1)} couldn't be read`;
+  return `${lines.length} lines couldn't be read, the first on line ${lines[0]}`;
+}
+
+/** A backup name of its own, so a copy made now never stands in for the day's first one. */
+function backupLabel(d = new Date()): string {
+  const clock = [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, '0')).join('');
+  return `${dayKey(d)}-${clock}`;
+}
+
+const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
 /** A stamp newer than the row's current one, even when this device's clock runs behind. */
 function stampAfter(r: Reading): number {
   return Math.max(Date.now(), r.updated + 1);
@@ -98,6 +113,8 @@ export class Store {
   ready = $state(false);
   startError = $state<string | null>(null);
   loadError = $state<string | null>(null);
+  /** Lines of the data file that could not be read, when that is why it was not opened. */
+  unreadLines = $state(0);
   toasts = $state<Toast[]>([]);
   settingsOpen = $state(false);
   editing = $state<Reading | null>(null);
@@ -125,6 +142,7 @@ export class Store {
 
   /** The file `rows` were read from. Saves and reloads use it, so they never reach a file chosen since. */
   private rowsFile = '';
+  private failedLoad: 'open' | 'switch' = 'open';
   private fileMtime: number | null = null;
   private lastUpdateCheck = 0;
   private lastUpdateTry = 0;
@@ -264,26 +282,53 @@ export class Store {
     this.now = new Date();
   }
 
-  /** 'external' folds a hand-edited file into memory; 'switch' restarts the sync engine from the new file. */
-  async loadReadings(mode: 'open' | 'external' | 'switch' = 'open'): Promise<void> {
-    this.loadError = null;
-    const path = mode === 'external' ? this.rowsFile : this.dataPath;
+  /**
+   * 'external' folds a hand-edited file into memory; 'switch' restarts the sync engine from the new file.
+   * A file with lines that can't be read is only opened with `keepReadable`, after a backup.
+   */
+  async loadReadings(mode: 'open' | 'external' | 'switch' = 'open', keepReadable = false): Promise<void> {
+    const external = mode === 'external';
+    if (!external) {
+      this.loadError = null;
+      this.unreadLines = 0;
+    }
+    const path = external ? this.rowsFile : this.dataPath;
     try {
       const text = await readText(path);
-      if (mode === 'external' && text === null) {
+      if (external && text === null) {
         // A file that vanished, often only for a moment under a sync tool, is written back instead of emptying the list.
         this.fileMtime = null;
         void this.persist(false);
         return;
       }
       const mtime = await fileMtime(path);
-      const parsed = text ? parseReadings(text, this.settings.unit) : { readings: [], skipped: 0 };
-      const unique = dedupeIds(parsed.readings);
+      const parsed = text ? parseReadings(text, this.settings.unit) : null;
+      const readings = parsed?.readings ?? [];
+      const skipped = parsed?.skippedLines ?? [];
+      if (!external && parsed?.headers.length && (parsed.time < 0 || parsed.glucose < 0)) {
+        throw new Error("It has no time or glucose column, so it doesn't look like a readings file.");
+      }
+      if (!external && skipped.length) {
+        this.unreadLines = skipped.length;
+        if (!keepReadable) throw new Error(`${unreadable(skipped)}.`);
+        await backupFile(path, backupLabel(), BACKUPS_KEPT).catch((e) => {
+          throw new Error(`It couldn't be backed up first: ${message(e)}`);
+        });
+        this.unreadLines = 0;
+      }
+      const unique = dedupeIds(readings);
       const current = dropExpiredTombstones(unique.rows);
       let rows = current.rows;
       let rewrite = unique.changed || current.changed;
-      if (mode === 'external') {
-        const edit = reconcileExternal(this.rows, rows, this.onDisk, parsed.skipped === 0);
+      if (external) {
+        if (skipped.length) {
+          const kept = await backupFile(path, backupLabel(), BACKUPS_KEPT).then(
+            () => ' The file as it was is in the backups.',
+            () => '',
+          );
+          this.toast(`${unreadable(skipped)}, so ${skipped.length === 1 ? 'it was' : 'they were'} left out.${kept}`);
+        }
+        const edit = reconcileExternal(this.rows, rows, this.onDisk, skipped.length === 0);
         rows = edit.rows;
         rewrite = true;
         if (edit.kept) this.toast(`Kept ${edit.kept} reading${edit.kept === 1 ? '' : 's'} missing from the file. Delete them here to remove them everywhere.`);
@@ -291,19 +336,25 @@ export class Store {
       this.rows = rows;
       this.rowsFile = path;
       this.fileMtime = mtime;
-      this.onDisk = diskKeys(parsed.readings);
+      this.onDisk = diskKeys(readings);
       if (mode === 'switch') this.sync.replace(rows);
       else if (this.ready) this.sync.push(rows);
       if (rewrite) void this.persist(false);
     } catch (e) {
-      if (mode === 'external') {
-        this.toast(`Couldn't reload the file: ${String(e)}`);
+      if (external) {
+        this.toast(`Couldn't reload the file: ${message(e)}`);
         return;
       }
       this.rows = [];
       this.rowsFile = path;
-      this.loadError = String(e);
+      this.failedLoad = mode;
+      this.loadError = message(e);
     }
+  }
+
+  /** Reads the file that failed to load again, the same way as before. */
+  retryLoad(keepReadable = false): Promise<void> {
+    return this.loadReadings(this.failedLoad, keepReadable);
   }
 
   /** Runs after any queued writes, so the app's own saves are never mistaken for outside edits. */
@@ -316,7 +367,7 @@ export class Store {
 
   /** Folds in the file when something else changed it since the app last read or wrote it. Runs inside the queue. */
   private async reloadIfChanged(): Promise<boolean> {
-    if (!this.rowsFile) return false;
+    if (!this.rowsFile || this.loadError) return false;
     const m = await fileMtime(this.rowsFile);
     if (m === this.fileMtime) return false;
     await this.loadReadings('external');

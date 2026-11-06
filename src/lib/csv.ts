@@ -1,11 +1,19 @@
 import { normalizeContext, roundForUnit, toMmol, type Reading, type Unit } from './glucose';
 import { detectDayOrder, instantMs, localeDayOrder, parseStamp, parseTime, toLocalIso } from './time';
 
-export function parseCsv(text: string): string[][] {
-  const rows: string[][] = [];
+interface CsvRow {
+  cells: string[];
+  /** The line of the file the row starts on, counting from 1. */
+  line: number;
+}
+
+function parseCsvRows(text: string): CsvRow[] {
+  const rows: CsvRow[] = [];
   let row: string[] = [];
   let field = '';
   let quoted = false;
+  let line = 1;
+  let start = 1;
   let i = 0;
   if (text.charCodeAt(0) === 0xfeff) i = 1;
   for (; i < text.length; i++) {
@@ -16,7 +24,10 @@ export function parseCsv(text: string): string[][] {
           field += '"';
           i++;
         } else quoted = false;
-      } else field += c;
+      } else {
+        field += c;
+        if (c === '\n' || (c === '\r' && text[i + 1] !== '\n')) line++;
+      }
       continue;
     }
     if (c === '"') quoted = true;
@@ -27,15 +38,20 @@ export function parseCsv(text: string): string[][] {
       if (c === '\r' && text[i + 1] === '\n') i++;
       row.push(field);
       field = '';
-      rows.push(row);
+      rows.push({ cells: row, line: start });
       row = [];
+      start = ++line;
     } else field += c;
   }
   if (field.length || row.length) {
     row.push(field);
-    rows.push(row);
+    rows.push({ cells: row, line: start });
   }
-  return rows.filter((r) => r.some((f) => f.trim() !== ''));
+  return rows.filter((r) => r.cells.some((f) => f.trim() !== ''));
+}
+
+export function parseCsv(text: string): string[][] {
+  return parseCsvRows(text).map((r) => r.cells);
 }
 
 function escapeField(s: string): string {
@@ -124,6 +140,8 @@ export interface ParsedFile {
   readings: Reading[];
   /** Data lines that had no usable time or value. */
   skipped: number;
+  /** Where each of those lines is in the file, counting from 1. */
+  skippedLines: number[];
   /** Header cells as written, and the time and glucose columns used; -1 when none was found. */
   headers: string[];
   time: number;
@@ -166,18 +184,20 @@ function findHeaderRow(rows: string[][]): number {
 }
 
 export function parseReadings(text: string, fallbackUnit: Unit, choice: ColumnChoice = {}): ParsedFile {
-  const all = parseCsv(text);
-  if (!all.length) return { readings: [], skipped: 0, headers: [], time: -1, glucose: -1 };
+  const lines = parseCsvRows(text);
+  const all = lines.map((r) => r.cells);
+  if (!all.length) return { readings: [], skipped: 0, skippedLines: [], headers: [], time: -1, glucose: -1 };
   const headerRow = findHeaderRow(all);
   const shown = all[headerRow].map((h) => h.trim());
   const headers = shown.map((h) => h.toLowerCase());
   const rows = all.slice(headerRow + 1);
+  const lineOf = (i: number) => lines[headerRow + 1 + i].line;
   const guessed = layoutOf(headers);
   const timeCol = choice.time ?? guessed?.time ?? -1;
   const clockCol = choice.time === undefined || choice.time === guessed?.time ? (guessed?.clock ?? -1) : -1;
   const glucoseCols = choice.glucose !== undefined ? [choice.glucose] : (guessed?.glucose ?? []);
   const found = { headers: shown, time: timeCol, glucose: glucoseCols[0] ?? -1 };
-  if (timeCol < 0 || !glucoseCols.length) return { readings: [], skipped: rows.length, ...found };
+  if (timeCol < 0 || !glucoseCols.length) return { readings: [], skipped: rows.length, skippedLines: rows.map((_, i) => lineOf(i)), ...found };
 
   const unitCol = findCol(headers, COLS.unit);
   const contextCol = findCol(headers, COLS.context);
@@ -188,13 +208,17 @@ export function parseReadings(text: string, fallbackUnit: Unit, choice: ColumnCh
   const dayOrder = detectDayOrder(rows.map((r) => r[timeCol] ?? '')) ?? localeDayOrder();
 
   const out: Reading[] = [];
-  for (const r of rows) {
+  const skippedLines: number[] = [];
+  for (const [i, r] of rows.entries()) {
     const timeText = clockCol >= 0 ? `${r[timeCol] ?? ''} ${r[clockCol] ?? ''}` : (r[timeCol] ?? '');
     const stamp = parseStamp(timeText, dayOrder);
     const glucoseCol = glucoseCols.find((c) => (r[c] ?? '').trim() !== '') ?? glucoseCols[0];
     const valueText = (r[glucoseCol] ?? '').trim();
     const value = Number(valueText.replace(',', '.'));
-    if (!stamp || !Number.isFinite(value) || value <= 0) continue;
+    if (!stamp || !Number.isFinite(value) || value <= 0) {
+      skippedLines.push(lineOf(i));
+      continue;
+    }
     const { time, offset } = stamp;
     const unit: Unit =
       choice.unit ??
@@ -214,7 +238,7 @@ export function parseReadings(text: string, fallbackUnit: Unit, choice: ColumnCh
     out.push({ id, time, offset, mmol, unit, context, note, updated, deleted });
   }
   out.sort((a, b) => a.time.getTime() - b.time.getTime());
-  return { readings: out, skipped: rows.length - out.length, ...found };
+  return { readings: out, skipped: skippedLines.length, skippedLines, ...found };
 }
 
 function valueText(r: Reading): string {
