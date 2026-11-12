@@ -123,6 +123,8 @@ export class Store {
   unreadLines = $state(0);
   /** Why the readings on screen are not all in the file. Null while the two agree. */
   saveProblem = $state<string | null>(null);
+  /** Set while the user is asked whether to quit with readings unsaved. Calling it quits. */
+  leaving = $state<(() => void) | null>(null);
   toasts = $state<Toast[]>([]);
   settingsOpen = $state(false);
   editing = $state<Reading | null>(null);
@@ -431,6 +433,10 @@ export class Store {
     this.saveProblem = null;
     if (this.saveRetry) clearTimeout(this.saveRetry);
     this.saveRetry = null;
+    // The save was all that held up a quit the user had asked for.
+    const leave = this.leaving;
+    this.leaving = null;
+    leave?.();
   }
 
   /** Keeps the reason on screen and tries the save again after a while. */
@@ -563,11 +569,22 @@ export class Store {
 
   /** Both wait for queued saves, so a reading entered just before is not lost. */
   quit(): void {
-    if (isTauri) void this.settle().then(() => quitApp());
+    if (isTauri) void this.leave(() => void quitApp(), false);
   }
 
   closeWindow(): void {
-    if (isTauri) void this.settle().then(() => win.close());
+    if (isTauri) void this.leave(() => void win.close(), this.settings.background);
+  }
+
+  /** Leaves once the readings are saved. When they can't be, the user decides, unless the app keeps running. */
+  private async leave(go: () => void, staysRunning: boolean): Promise<void> {
+    await this.settle();
+    if (this.saveProblem && !staysRunning) {
+      void this.persist(false);
+      await this.settle();
+    }
+    if (this.saveProblem && !staysRunning) this.leaving = go;
+    else go();
   }
 }
 

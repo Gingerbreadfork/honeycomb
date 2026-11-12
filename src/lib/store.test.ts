@@ -9,6 +9,7 @@ let clock = 1000;
 let tauri = false;
 const backupFile = vi.fn(async (..._args: unknown[]) => {});
 const closeWindow = vi.fn(async () => {});
+const quitApp = vi.fn(async () => {});
 
 function put(path: string, text: string): void {
   files.set(path, { text, mtime: ++clock });
@@ -33,7 +34,7 @@ vi.mock('./platform', () => ({
   fileMtime: async (path: string) => files.get(path)?.mtime ?? null,
   backupFile: (...args: unknown[]) => backupFile(...args),
   setBackgroundMode: async () => {},
-  quitApp: async () => {},
+  quitApp: () => quitApp(),
   canSelfUpdate: false,
   installUpdate: async () => false,
   pickCsvText: async () => null,
@@ -85,6 +86,7 @@ beforeEach(() => {
   unwritable.clear();
   backupFile.mockClear();
   closeWindow.mockReset();
+  quitApp.mockClear();
   tauri = false;
   vi.stubGlobal('document', { documentElement: { dataset: {} } });
 });
@@ -269,6 +271,43 @@ describe('Store', () => {
     await inside(store).queue;
     expect(store.saveProblem).toBeNull();
     expect(onDisk()).toContain(saved.id);
+  });
+
+  it('asks before quitting while a save has not gone through', async () => {
+    const { store } = await openStore([line('a', 8, '6.4')]);
+    tauri = true;
+    unwritable.add(DATA);
+    store.add(typed);
+    store.quit();
+    await vi.waitFor(() => expect(store.leaving).not.toBeNull());
+    expect(quitApp).not.toHaveBeenCalled();
+    store.leaving!();
+    expect(quitApp).toHaveBeenCalledTimes(1);
+  });
+
+  it('quits by itself once the save that held it up goes through', async () => {
+    const { store } = await openStore([line('a', 8, '6.4')]);
+    tauri = true;
+    unwritable.add(DATA);
+    const saved = store.add(typed);
+    store.quit();
+    await vi.waitFor(() => expect(store.leaving).not.toBeNull());
+    unwritable.clear();
+    await store.retrySave();
+    expect(onDisk()).toContain(saved.id);
+    expect(store.leaving).toBeNull();
+    expect(quitApp).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the window without asking when the app keeps running behind it', async () => {
+    const { store } = await openStore([line('a', 8, '6.4')]);
+    tauri = true;
+    store.settings = { ...store.settings, background: true };
+    unwritable.add(DATA);
+    store.add(typed);
+    store.closeWindow();
+    await vi.waitFor(() => expect(closeWindow).toHaveBeenCalled());
+    expect(store.leaving).toBeNull();
   });
 
   it('leaves a file with lines it cannot read alone until told to open it without them', async () => {

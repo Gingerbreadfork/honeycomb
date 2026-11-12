@@ -5,6 +5,7 @@
   import TitleBar from './components/TitleBar.svelte';
   import Toasts from './components/Toasts.svelte';
   import PairRequestDialog from './components/PairRequestDialog.svelte';
+  import UnsavedDialog from './components/UnsavedDialog.svelte';
   import ImportDialog from './components/ImportDialog.svelte';
   import SettingsDialog from './components/SettingsDialog.svelte';
   import EditReading from './components/EditReading.svelte';
@@ -18,6 +19,10 @@
     (window as unknown as { __honeycombBack: () => boolean }).__honeycombBack = () => {
       if (app.sync.pairRequest) {
         app.sync.respondPair(app.sync.pairRequest.request_id, false);
+        return true;
+      }
+      if (app.leaving) {
+        app.leaving = null;
         return true;
       }
       if (app.importing) {
@@ -128,6 +133,7 @@
   {/if}
   <PairRequestDialog />
   <ImportDialog />
+  <UnsavedDialog />
   <Toasts />
 
   {#if isDesktop && !app.maximized}
