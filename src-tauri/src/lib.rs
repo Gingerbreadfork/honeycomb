@@ -87,7 +87,8 @@ fn read_text(path: String, lossy: Option<bool>) -> Result<Option<String>, String
     }
 }
 
-/// A new file is readable only by the user; readings are health data.
+/// A new file is readable only by the user; readings are health data. The bytes reach the disk
+/// before this returns, so a rename that follows can't leave an empty file after a power cut.
 pub(crate) fn write_new_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     let mut options = std::fs::OpenOptions::new();
@@ -97,7 +98,19 @@ pub(crate) fn write_new_private(path: &Path, bytes: &[u8]) -> std::io::Result<()
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    options.open(path)?.write_all(bytes)
+    let mut file = options.open(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()
+}
+
+/// Makes a rename inside the folder of `path` last through a power cut.
+fn sync_folder_of(path: &Path) {
+    #[cfg(unix)]
+    if let Some(folder) = path.parent().and_then(|dir| std::fs::File::open(dir).ok()) {
+        let _ = folder.sync_all();
+    }
+    #[cfg(not(unix))]
+    let _ = path;
 }
 
 /// Renames over the target. Windows reports a file that a scanner still has open as in use, so
@@ -107,7 +120,11 @@ pub(crate) fn rename_over(from: &Path, to: &Path) -> std::io::Result<()> {
     for _ in 0..6 {
         match std::fs::rename(from, to) {
             Err(e) if cfg!(windows) && matches!(e.raw_os_error(), Some(5) | Some(32)) => std::thread::sleep(delay),
-            result => return result,
+            result => {
+                result?;
+                sync_folder_of(to);
+                return Ok(());
+            }
         }
         delay *= 2;
     }
