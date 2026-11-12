@@ -132,10 +132,13 @@ pub(crate) fn rename_over(from: &Path, to: &Path) -> std::io::Result<()> {
 }
 
 /// Writes to a sibling temp file, then renames over the target. On Unix a file that already exists
-/// keeps its permissions. Returns the new mtime.
+/// keeps its permissions. A symlink is written through, not replaced. Returns the new mtime.
 #[tauri::command]
 fn write_text(path: String, text: String) -> Result<Option<u64>, String> {
-    let path = PathBuf::from(path);
+    let mut path = PathBuf::from(path);
+    if std::fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_symlink()) {
+        path = std::fs::canonicalize(&path).map_err(|e| e.to_string())?;
+    }
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
@@ -470,6 +473,21 @@ mod tests {
         assert!(read_text(path.clone(), None).unwrap_err().contains("UTF-8"));
         assert!(read_text(path.clone(), Some(true)).unwrap().unwrap().ends_with("caf\u{fffd}\n"));
         assert_eq!(read_text(root.join("missing.csv").to_string_lossy().into_owned(), None), Ok(None));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_file_is_written_through() {
+        let root = std::env::temp_dir().join(format!("honeycomb-write-symlink-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("synced")).unwrap();
+        let (real, link) = (root.join("synced/readings.csv"), root.join("readings.csv"));
+        std::fs::write(&real, "before").unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        write_text(link.to_string_lossy().into_owned(), "after".into()).unwrap();
+        assert!(std::fs::symlink_metadata(&link).unwrap().file_type().is_symlink());
+        assert_eq!(std::fs::read_to_string(&real).unwrap(), "after");
         let _ = std::fs::remove_dir_all(&root);
     }
 
