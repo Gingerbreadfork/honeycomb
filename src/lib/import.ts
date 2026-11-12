@@ -4,6 +4,8 @@ import { instantMs } from './time';
 export interface ImportPlan {
   total: number;
   add: Reading[];
+  /** Readings the file still has that were deleted here. They come back only when asked for. */
+  deleted: Reading[];
   existing: number;
   /** Lines in the file that had no usable time or value. */
   skipped: number;
@@ -39,11 +41,16 @@ class MinuteIndex {
 /** Decides which incoming rows are new. Matches by id first, then by time and value. */
 export function planImport(current: Reading[], incoming: Reading[], skipped = 0): ImportPlan {
   const ids = new Set(current.map((r) => r.id));
+  const gone = new Set(current.filter((r) => r.deleted).map((r) => r.id));
   const live = new MinuteIndex();
   for (const r of current) if (!r.deleted) live.add(r);
   const add: Reading[] = [];
+  const deleted: Reading[] = [];
   for (const row of incoming) {
-    if (ids.has(row.id)) continue;
+    if (ids.has(row.id)) {
+      if (gone.delete(row.id) && !row.deleted && !live.has(row)) deleted.push(row);
+      continue;
+    }
     ids.add(row.id);
     if (!row.deleted) {
       if (live.has(row)) continue;
@@ -51,5 +58,5 @@ export function planImport(current: Reading[], incoming: Reading[], skipped = 0)
     }
     add.push(row);
   }
-  return { total: incoming.length, add, existing: incoming.length - add.length, skipped };
+  return { total: incoming.length, add, deleted, existing: incoming.length - add.length - deleted.length, skipped };
 }

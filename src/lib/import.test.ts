@@ -35,6 +35,14 @@ describe('planImport', () => {
     expect(performance.now() - t0).toBeLessThan(2000);
   });
 
+  it('sets aside readings the file still has that were deleted here', () => {
+    const current = [r('a', 0, 6.4), r('gone', 30, 7.1, 5), r('both-gone', 60, 5.5, 5), r('re-entered', 90, 8.0, 5), r('again', 90, 8.0)];
+    const plan = planImport(current, [r('a', 0, 6.4), r('gone', 30, 7.1), r('both-gone', 60, 5.5, 4), r('re-entered', 90, 8.0)]);
+    expect(plan.add).toEqual([]);
+    expect(plan.deleted.map((x) => x.id)).toEqual(['gone']);
+    expect(plan.existing).toBe(3);
+  });
+
   it('keeps tombstones from a full export so deletions carry over', () => {
     const plan = planImport([], [r('gone', 0, 6.0, 5)]);
     expect(plan.add).toHaveLength(1);

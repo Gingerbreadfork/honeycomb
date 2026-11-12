@@ -20,6 +20,9 @@
   });
   const unit = $derived(app.settings.unit);
   const skipped = $derived(job?.plan.skipped ?? 0);
+  const deleted = $derived(job?.plan.deleted.length ?? 0);
+  let restore = $state(false);
+  const count = $derived(fresh.length + (restore ? deleted : 0));
 
   let choosing = $state(false);
   const showColumns = $derived(job !== null && job.headers.length > 0 && (choosing || job.plan.total === 0));
@@ -36,7 +39,15 @@
 
   function close(): void {
     choosing = false;
+    restore = false;
     app.importing = null;
+  }
+
+  function confirm(): void {
+    const bringBack = restore;
+    choosing = false;
+    restore = false;
+    app.confirmImport(bringBack);
   }
 </script>
 
@@ -50,7 +61,11 @@
       </p>
     {:else if fresh.length === 0}
       <p class="text">
-        Everything in this file is already here. {job.plan.total} reading{job.plan.total === 1 ? '' : 's'} checked, nothing new.
+        {#if deleted}
+          Nothing in this file is new. {job.plan.total} reading{job.plan.total === 1 ? '' : 's'} checked.
+        {:else}
+          Everything in this file is already here. {job.plan.total} reading{job.plan.total === 1 ? '' : 's'} checked, nothing new.
+        {/if}
       </p>
     {:else}
       <p class="text">
@@ -63,6 +78,12 @@
         {/each}
         {#if fresh.length > 4}<li class="more">and {fresh.length - 4} more</li>{/if}
       </ul>
+    {/if}
+    {#if deleted}
+      <label class="restore">
+        <input type="checkbox" bind:checked={restore} />
+        <span>Bring back {deleted === 1 ? 'the reading' : `the ${deleted} readings`} in this file that {deleted === 1 ? 'was' : 'were'} deleted here</span>
+      </label>
     {/if}
     {#if skipped && job.plan.total > 0}
       <p class="text skipped">{skipped} line{skipped === 1 ? '' : 's'} could not be read and will be left out.</p>
@@ -100,9 +121,9 @@
       <button type="button" class="btn small ghost remap" onclick={() => (choosing = true)}>Not right? Choose the columns</button>
     {/if}
     {#snippet footer()}
-      {#if fresh.length}
+      {#if count}
         <button type="button" class="btn" onclick={close}>Cancel</button>
-        <button type="button" class="btn primary" data-autofocus onclick={() => { choosing = false; app.confirmImport(); }}>Import {fresh.length} reading{fresh.length === 1 ? '' : 's'}</button>
+        <button type="button" class="btn primary" data-autofocus onclick={confirm}>Import {count} reading{count === 1 ? '' : 's'}</button>
       {:else}
         <button type="button" class="btn primary" data-autofocus onclick={close}>Done</button>
       {/if}
@@ -126,6 +147,19 @@
   }
   .skipped {
     margin-top: 12px;
+  }
+  .restore {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-top: 14px;
+    font-size: 13px;
+    color: var(--ink-2);
+    cursor: pointer;
+  }
+  .restore input {
+    margin-top: 3px;
+    accent-color: var(--accent);
   }
   .columns {
     display: flex;

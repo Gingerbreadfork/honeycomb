@@ -413,6 +413,28 @@ describe('Store', () => {
     expect(store.toasts.map((t) => t.text)).toContain('Imported 1 reading');
   });
 
+  it('brings a deleted reading back from a backup only when asked to', async () => {
+    const { store } = await openStore([line('a', 8, '6.4'), line('b', 12, '7.1')]);
+    const backup = onDisk();
+    store.remove('b');
+    const tombstone = store.rows.find((r) => r.id === 'b')!;
+
+    store.previewImport('readings-backup.csv', backup);
+    expect(store.importing!.plan.deleted.map((r) => r.id)).toEqual(['b']);
+    store.confirmImport();
+    expect(store.readings.map((r) => r.id)).toEqual(['a']);
+
+    store.previewImport('readings-backup.csv', backup);
+    store.confirmImport(true);
+    await inside(store).queue;
+    const b = store.rows.find((r) => r.id === 'b')!;
+    expect(b.deleted).toBeNull();
+    expect(b.updated).toBeGreaterThan(tombstone.updated);
+    expect(store.readings.map((r) => r.id)).toEqual(['a', 'b']);
+    expect(store.toasts.map((t) => t.text)).toContain('Imported 1 reading');
+    expect(onDisk()).toMatch(/,7\.1,mmol\/L,,,b,[^,]+,\n/);
+  });
+
   it('backs the file up once a day, before the first write', async () => {
     const { store } = await openStore([line('a', 8, '6.4')]);
     store.add(typed);

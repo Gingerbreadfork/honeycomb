@@ -167,7 +167,8 @@ and when the headers are not recognised the import dialog lets you say which col
 
 Before the first change on any day, the file as it stood is copied to
 `~/.local/share/honeycomb/backups/readings-<date>.csv`. The last 14 are kept. To go back to one,
-quit the app and copy it over `readings.csv`, or import it to bring back only what is missing.
+quit the app and copy it over `readings.csv`, or import it to bring back only what is missing. The
+import asks before bringing back readings you have deleted since.
 
 Settings live in `~/.config/honeycomb/settings.json`. On Windows everything sits together under
 `%APPDATA%\honeycomb`: `readings.csv`, `settings.json`, and the `backups` folder. Edits made to the

@@ -514,16 +514,23 @@ export class Store {
     if (job) this.previewImport(job.name, job.text, { ...job.choice, ...choice });
   }
 
-  confirmImport(): void {
+  /** `restore` also brings back the file's readings that were deleted here. */
+  confirmImport(restore = false): void {
     const job = this.importing;
     if (!job) return;
     this.importing = null;
     // Checked again, since the same readings may have synced in while the dialog was open.
-    const { add } = planImport(this.rows, job.plan.add);
-    if (!add.length) return;
-    this.rows = [...this.rows, ...add].sort((a, b) => a.time.getTime() - b.time.getTime());
+    const plan = planImport(this.rows, [...job.plan.add, ...job.plan.deleted]);
+    const back = new Map((restore ? plan.deleted : []).map((r) => [r.id, r]));
+    if (!plan.add.length && !back.size) return;
+    // A restored reading takes a stamp newer than its deletion, so it comes back on every device.
+    const kept = this.rows.map((r) => {
+      const from = back.get(r.id);
+      return from ? { ...from, deleted: null, updated: stampAfter(r) } : r;
+    });
+    this.rows = [...kept, ...plan.add].sort((a, b) => a.time.getTime() - b.time.getTime());
     void this.persist();
-    const n = add.filter((r) => !r.deleted).length;
+    const n = plan.add.filter((r) => !r.deleted).length + back.size;
     this.toast(`Imported ${n} reading${n === 1 ? '' : 's'}`);
   }
 
