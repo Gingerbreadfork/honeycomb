@@ -261,6 +261,13 @@ fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
     crate::rename_over(&tmp, path)
 }
 
+/// The key held in `device.key`, or None when the file's contents are not one.
+fn parse_key(saved: &[u8]) -> Option<SecretKey> {
+    let hex = std::str::from_utf8(saved).ok()?.trim();
+    let bytes: [u8; 32] = data_encoding::HEXLOWER.decode(hex.as_bytes()).ok()?.try_into().ok()?;
+    Some(SecretKey::from_bytes(&bytes))
+}
+
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
 }
@@ -508,18 +515,23 @@ impl SyncEngine {
     pub async fn start(ui: Arc<dyn Ui>, dir: PathBuf, net: Network) -> Result<Shared, String> {
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let key_path = dir.join("device.key");
-        let secret = match std::fs::read_to_string(&key_path) {
-            Ok(hex) => {
-                let bytes = data_encoding::HEXLOWER.decode(hex.trim().as_bytes()).map_err(|_| "The device key file is damaged".to_string())?;
-                let arr: [u8; 32] = bytes.try_into().map_err(|_| "The device key file is damaged".to_string())?;
-                SecretKey::from_bytes(&arr)
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+        let saved = match std::fs::read(&key_path) {
+            Ok(bytes) => Some(bytes),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(format!("Couldn't read the device key: {e}")),
+        };
+        let secret = match saved.as_deref().and_then(parse_key) {
+            Some(key) => key,
+            None => {
+                // A damaged key is set aside. The new one is a new identity, so paired devices
+                // turn this one away until it is paired again.
+                if saved.is_some() {
+                    let _ = std::fs::rename(&key_path, dir.join("device.key.bad"));
+                }
                 let sk = SecretKey::generate();
                 write_private(&key_path, &data_encoding::HEXLOWER.encode(&sk.to_bytes())).map_err(|e| e.to_string())?;
                 sk
             }
-            Err(e) => return Err(format!("Couldn't read the device key: {e}")),
         };
         let devices_path = dir.join("devices.json");
         let file: DevicesFile = match std::fs::read_to_string(&devices_path) {
@@ -1264,6 +1276,22 @@ mod tests {
 
     fn ids(d: &Device) -> Vec<String> {
         d.engine.inner.lock().unwrap().rows.keys().cloned().collect()
+    }
+
+    #[test]
+    fn a_damaged_key_is_set_aside_and_replaced() {
+        tauri::async_runtime::block_on(async {
+            let dir = std::env::temp_dir().join(format!("honeycomb-sync-test-{}-damaged-key", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("device.key"), "").unwrap();
+            let ui = Arc::new(FakeUi { events: Mutex::new(Vec::new()), engine: Mutex::new(None), accept: true });
+            let net = Network { relays: false, mdns: false, loopback: true, online_wait: Duration::ZERO };
+            let engine = SyncEngine::start(ui, dir.clone(), net).await.unwrap();
+            let key = parse_key(&std::fs::read(dir.join("device.key")).unwrap()).unwrap();
+            assert_eq!(key.public(), engine.endpoint.id());
+            assert!(dir.join("device.key.bad").exists());
+            let _ = std::fs::remove_dir_all(&dir);
+        });
     }
 
     #[test]
