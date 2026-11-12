@@ -68,7 +68,7 @@ export const CLEAN_HEADER = ['time', 'glucose', 'unit', 'context', 'note'];
 const COLS = {
   time: ['time', 'timestamp', 'datetime', 'date_time', 'date time', 'taken', 'when'],
   date: ['date', 'day'],
-  clock: ['time of day', 'clock'],
+  clock: ['time', 'time of day', 'clock'],
   glucose: ['glucose', 'value', 'reading', 'bg', 'blood glucose', 'blood_glucose', 'blood sugar', 'level', 'sugar', 'result'],
   unit: ['unit', 'units'],
   context: ['context', 'tag', 'type', 'meal', 'event', 'label'],
@@ -167,16 +167,11 @@ interface Layout {
 }
 
 function layoutOf(headers: string[]): Layout | null {
-  let time = findCol(headers, COLS.time);
   const date = exactCol(headers, COLS.date);
-  let clock = -1;
-  if (time < 0 && date >= 0) {
-    time = date;
-    clock = headers.findIndex((h, i) => i !== date && h === 'time');
-  } else if (time >= 0 && date >= 0 && headers[time] === 'time') {
-    clock = time;
-    time = date;
-  }
+  // Beside a date column, a column of clock times is joined to it rather than read on its own.
+  const clock = date >= 0 ? exactCol(headers, COLS.clock) : -1;
+  let time = clock >= 0 ? date : findCol(headers, COLS.time);
+  if (time < 0) time = date;
   const first = findCol(headers, COLS.glucose);
   if (time < 0 || first < 0) return null;
   // Meter exports split values across columns such as "Scan Glucose" and "Strip Glucose".

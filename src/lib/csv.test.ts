@@ -100,6 +100,16 @@ describe('csv', () => {
     expect(r[0].time.getMinutes()).toBe(30);
   });
 
+  it('joins a clock column to the date whatever it is called', () => {
+    for (const clock of ['Time', 'Time of day', 'Clock']) {
+      const parsed = parseReadings(`Date,${clock},Glucose\n2026-09-01,07:30,6.4\n`, 'mmol/L');
+      expect(parsed.skipped, clock).toBe(0);
+      expect(parsed.readings.map((r) => [r.time.getDate(), r.time.getHours(), r.time.getMinutes()]), clock).toEqual([[1, 7, 30]]);
+    }
+    const stamped = parseReadings('Date,Timestamp,Glucose\n2026-09-01,2026-09-02 07:30,6.4\n', 'mmol/L');
+    expect(stamped.readings[0].time.getDate()).toBe(2);
+  });
+
   it('reads a file that names no unit in one unit throughout', () => {
     const mgdl = 'time,glucose\n2026-09-15 08:00,30\n2026-09-15 12:00,112\n2026-09-15 18:00,140\n';
     expect(parseReadings(mgdl, 'mmol/L').readings.map((r) => r.unit)).toEqual(['mg/dL', 'mg/dL', 'mg/dL']);
