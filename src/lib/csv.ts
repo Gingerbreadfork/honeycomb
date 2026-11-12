@@ -1,4 +1,4 @@
-import { normalizeContext, roundForUnit, toMmol, type Reading, type Unit } from './glucose';
+import { LIMITS, normalizeContext, roundForUnit, toMmol, type Reading, type Unit } from './glucose';
 import { detectDayOrder, instantMs, localeDayOrder, parseStamp, parseTime, toLocalIso } from './time';
 
 interface CsvRow {
@@ -125,6 +125,18 @@ function unitFrom(raw: string): Unit | null {
   return null;
 }
 
+/**
+ * The unit of a file's values when nothing in it names one. Values over the mmol/L range can only be
+ * mg/dL and values under the mg/dL range only mmol/L; whichever the file has more of decides for all
+ * of it, and `fallback` when neither does.
+ */
+function unitOfValues(values: number[], fallback: Unit): Unit {
+  const mgdl = values.filter((v) => v > LIMITS['mmol/L'][1]).length;
+  const mmol = values.filter((v) => v < LIMITS['mg/dL'][0]).length;
+  if (mgdl === mmol) return fallback;
+  return mgdl > mmol ? 'mg/dL' : 'mmol/L';
+}
+
 export function readingsFromCsv(text: string, fallbackUnit: Unit): Reading[] {
   return parseReadings(text, fallbackUnit).readings;
 }
@@ -216,7 +228,7 @@ export function parseReadings(text: string, fallbackUnit: Unit, choice: ColumnCh
   const deletedCol = exactCol(headers, COLS.deleted);
   const dayOrder = detectDayOrder(rows.map((r) => r[timeCol] ?? '')) ?? localeDayOrder();
 
-  const out: Reading[] = [];
+  const usable: { r: string[]; stamp: NonNullable<ReturnType<typeof parseStamp>>; value: number; valueText: string; unit: Unit | null }[] = [];
   const skippedLines: number[] = [];
   for (const [i, r] of rows.entries()) {
     const timeText = clockCol >= 0 ? `${r[timeCol] ?? ''} ${r[clockCol] ?? ''}` : (r[timeCol] ?? '');
@@ -228,12 +240,15 @@ export function parseReadings(text: string, fallbackUnit: Unit, choice: ColumnCh
       if (counts(i)) skippedLines.push(lineOf(i));
       continue;
     }
+    const unit = choice.unit ?? (unitCol >= 0 ? unitFrom(r[unitCol] ?? '') : null) ?? unitFrom(headers[glucoseCol]);
+    usable.push({ r, stamp, value, valueText, unit });
+  }
+  const unnamed = unitOfValues(usable.flatMap((u) => (u.unit ? [] : [u.value])), fallbackUnit);
+
+  const out: Reading[] = [];
+  for (const { r, stamp, value, valueText, ...row } of usable) {
     const { time, offset } = stamp;
-    const unit: Unit =
-      choice.unit ??
-      (unitCol >= 0 ? unitFrom(r[unitCol] ?? '') : null) ??
-      unitFrom(headers[glucoseCol]) ??
-      (value > 35 ? 'mg/dL' : fallbackUnit);
+    const unit = row.unit ?? unnamed;
     // Kept to the precision the file is written with, so a reading reads back the same after a save.
     const mmol = toMmol(roundForUnit(value, unit), unit);
     const context = normalizeContext(contextCol >= 0 ? (r[contextCol] ?? '') : '');

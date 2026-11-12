@@ -100,6 +100,21 @@ describe('csv', () => {
     expect(r[0].time.getMinutes()).toBe(30);
   });
 
+  it('reads a file that names no unit in one unit throughout', () => {
+    const mgdl = 'time,glucose\n2026-09-15 08:00,30\n2026-09-15 12:00,112\n2026-09-15 18:00,140\n';
+    expect(parseReadings(mgdl, 'mmol/L').readings.map((r) => r.unit)).toEqual(['mg/dL', 'mg/dL', 'mg/dL']);
+    expect(parseReadings(mgdl, 'mmol/L').readings[0].mmol).toBeCloseTo(1.66, 1);
+    const mmol = 'time,glucose\n2026-09-15 08:00,6.4\n2026-09-15 12:00,22.5\n2026-09-15 18:00,5\n';
+    expect(parseReadings(mmol, 'mg/dL').readings.map((r) => [r.unit, r.mmol])).toEqual([
+      ['mmol/L', 6.4],
+      ['mmol/L', 22.5],
+      ['mmol/L', 5],
+    ]);
+    const eitherWay = 'time,glucose\n2026-09-15 08:00,30\n';
+    expect(parseReadings(eitherWay, 'mmol/L').readings[0].unit).toBe('mmol/L');
+    expect(parseReadings(eitherWay, 'mg/dL').readings[0].unit).toBe('mg/dL');
+  });
+
   it('serializes with quoting only when needed', () => {
     expect(serializeCsv([['a', 'b c', 'd,e']])).toBe('a,b c,"d,e"\n');
   });
