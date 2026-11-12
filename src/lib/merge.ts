@@ -15,7 +15,7 @@ function compareText(a: string, b: string): number {
 /** Whole seconds, as the engine reads the time the app sends it. */
 const takenSecs = (r: Reading) => Math.floor(instantMs(r.time, r.offset) / 1000);
 
-/** True when `a` replaces `b`. Matches `beats` in sync.rs, so both settle a tie in `updated` on the same copy. */
+/** True when `a` replaces `b`. Matches `beats` in sync/rows.rs, so both settle a tie in `updated` on the same copy. */
 export function beats(a: Reading, b: Reading): boolean {
   const order =
     a.updated - b.updated ||
