@@ -15,7 +15,14 @@ export function toLocalIso(d: Date, withMs = false, offset: number | null = null
 
 export type DayOrder = 'dmy' | 'mdy';
 
-const NUMERIC_DATE = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})(?:[ ,T]+(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*([ap])\.?m\.?)?)?$/i;
+const NUMERIC_DATE = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4}|\d{2})(?:[ ,T]+(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*([ap])\.?m\.?)?)?$/i;
+
+/** A two-digit year is in this century, unless that would put it more than a year ahead. */
+function fullYear(text: string, now = new Date()): number {
+  if (text.length > 2) return +text;
+  const year = 2000 + +text;
+  return year > now.getFullYear() + 1 ? year - 100 : year;
+}
 
 /** Null when any part is out of range, rather than rolling over into another month or year. */
 function localDate(y: number, mo: number, d: number, h = 12, mi = 0, sec = 0, ms = 0): Date | null {
@@ -95,8 +102,10 @@ export function parseTime(raw: string, order: DayOrder = 'dmy'): Date | null {
       if (pm && h < 12) h += 12;
       if (!pm && h === 12) h = 0;
     }
-    return localDate(+m[3], month, day, h, m[5] ? +m[5] : 0, m[6] ? +m[6] : 0);
+    return localDate(fullYear(m[3]), month, day, h, m[5] ? +m[5] : 0, m[6] ? +m[6] : 0);
   }
+  // A numeric date that got this far is not left to the engine, which would pick the day order itself.
+  if (/^\d{1,2}[/.-]\d{1,2}[/.-]\d/.test(s)) return null;
   const d = new Date(s);
   return isNaN(d.getTime()) ? null : d;
 }

@@ -20,6 +20,20 @@ describe('parseTime', () => {
     expect(parseTime('15/09/2026 25:00')).toBeNull();
   });
 
+  it('reads two-digit years in the order the file uses', () => {
+    expect(ymdhm(parseTime('03/04/26 08:30'))).toEqual([2026, 4, 3, 8, 30, 0]);
+    expect(ymdhm(parseTime('03/04/26 08:30', 'mdy'))).toEqual([2026, 3, 4, 8, 30, 0]);
+    expect(ymdhm(parseTime('13/04/26 08:30'))).toEqual([2026, 4, 13, 8, 30, 0]);
+    expect(parseTime('31/12/99')?.getFullYear()).toBe(1999);
+    expect(detectDayOrder(['03/04/26', '25/03/26'])).toBe('dmy');
+  });
+
+  it('does not guess at a numeric date it cannot read', () => {
+    expect(parseTime('13/04/26 08:30', 'mdy')).toBeNull();
+    expect(parseTime('03/04/202 08:30')).toBeNull();
+    expect(parseTime('3-4-26 around 8')).toBeNull();
+  });
+
   it('reads fractional seconds', () => {
     expect(parseTime('2026-09-15 08:42:07.5')?.getMilliseconds()).toBe(500);
   });
