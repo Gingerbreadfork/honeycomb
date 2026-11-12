@@ -1,0 +1,146 @@
+{
+  "base": {
+    "id": "r",
+    "time": "2026-09-15T08:00:00+10:00",
+    "mmol": 6.4,
+    "unit": "mmol/L",
+    "context": "",
+    "note": "",
+    "updated": 10,
+    "deleted": null
+  },
+  "cases": [
+    {
+      "name": "a later stamp wins",
+      "a": {
+        "updated": 11
+      },
+      "b": {},
+      "wins": "a"
+    },
+    {
+      "name": "a later stamp wins over a deletion",
+      "a": {
+        "updated": 11
+      },
+      "b": {
+        "deleted": 10
+      },
+      "wins": "a"
+    },
+    {
+      "name": "with equal stamps a deletion wins",
+      "a": {
+        "deleted": 10
+      },
+      "b": {
+        "mmol": 9.9,
+        "note": "edited"
+      },
+      "wins": "a"
+    },
+    {
+      "name": "when the two were deleted is not compared",
+      "a": {
+        "deleted": 5
+      },
+      "b": {
+        "deleted": 9
+      },
+      "wins": null
+    },
+    {
+      "name": "then the higher value",
+      "a": {
+        "mmol": 6.5
+      },
+      "b": {
+        "note": "zzz"
+      },
+      "wins": "a"
+    },
+    {
+      "name": "then the unit",
+      "a": {
+        "unit": "mmol/L"
+      },
+      "b": {
+        "unit": "mg/dL",
+        "note": "zzz"
+      },
+      "wins": "a"
+    },
+    {
+      "name": "then the context",
+      "a": {
+        "context": "fasting"
+      },
+      "b": {
+        "context": "bedtime",
+        "note": "zzz"
+      },
+      "wins": "a"
+    },
+    {
+      "name": "then the note",
+      "a": {
+        "note": "b"
+      },
+      "b": {
+        "note": "a",
+        "time": "2026-09-15T09:00:00+10:00"
+      },
+      "wins": "a"
+    },
+    {
+      "name": "a longer note beats its own beginning",
+      "a": {
+        "note": "ab"
+      },
+      "b": {
+        "note": "a"
+      },
+      "wins": "a"
+    },
+    {
+      "name": "notes compare by code point",
+      "a": {
+        "note": "😀"
+      },
+      "b": {
+        "note": "～"
+      },
+      "wins": "a"
+    },
+    {
+      "name": "then the later moment",
+      "a": {
+        "time": "2026-09-15T09:00:00+10:00"
+      },
+      "b": {},
+      "wins": "a"
+    },
+    {
+      "name": "a later moment wins whatever clock it is written by",
+      "a": {
+        "time": "2026-09-14T23:00:00+00:00"
+      },
+      "b": {},
+      "wins": "a"
+    },
+    {
+      "name": "the same moment on another clock is no change",
+      "a": {
+        "time": "2026-09-14T22:00:00+00:00"
+      },
+      "b": {},
+      "wins": null
+    },
+    {
+      "name": "identical rows have no winner",
+      "a": {},
+      "b": {},
+      "wins": null
+    }
+  ]
+}

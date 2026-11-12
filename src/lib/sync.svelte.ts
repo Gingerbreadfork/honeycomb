@@ -38,7 +38,7 @@ export interface PairRequest {
   code: string;
 }
 
-interface Row {
+export interface Row {
   id: string;
   time: string;
   mmol: number;
@@ -65,7 +65,7 @@ export function toRow(r: Reading): Row {
   };
 }
 
-function fromRow(row: Row): Reading | null {
+export function fromRow(row: Row): Reading | null {
   const stamp = parseStamp(row.time);
   if (!stamp || !Number.isFinite(row.mmol)) return null;
   return {

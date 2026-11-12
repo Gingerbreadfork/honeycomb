@@ -1851,6 +1851,25 @@ mod tests {
         assert_eq!(a["a"].time, "2026-09-15T09:00:00+10:00");
     }
 
+    /// The page runs the same cases against `beats` in merge.ts.
+    #[test]
+    fn ties_are_settled_the_way_the_shared_cases_say() {
+        let file: serde_json::Value = serde_json::from_str(include_str!("../../fixtures/merge-order.json")).unwrap();
+        let row = |change: &serde_json::Value| -> Row {
+            let mut whole = file["base"].clone();
+            for (field, value) in change.as_object().unwrap() {
+                whole[field] = value.clone();
+            }
+            serde_json::from_value(whole).unwrap()
+        };
+        for case in file["cases"].as_array().unwrap() {
+            let (a, b) = (row(&case["a"]), row(&case["b"]));
+            let name = case["name"].as_str().unwrap();
+            assert_eq!(beats(&a, &b), case["wins"] == "a", "{name}");
+            assert_eq!(beats(&b, &a), case["wins"] == "b", "{name}");
+        }
+    }
+
     #[test]
     fn the_same_moment_written_another_way_is_not_a_change() {
         let here = at("a", 10, "2026-09-15T08:00:00+10:00");
