@@ -139,7 +139,7 @@
   <button type="submit" class="btn primary save" class:saved>
     {#if saved}
       <Icon name="check" />
-      <span>Saved</span>
+      <span>{app.saveProblem ? 'Added' : 'Saved'}</span>
     {:else}
       <span>Save reading</span>
       {#if !isMobile}<kbd>Enter</kbd>{/if}

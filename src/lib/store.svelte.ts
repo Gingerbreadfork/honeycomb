@@ -59,6 +59,8 @@ export interface ReadingInput {
 }
 
 const BACKUPS_KEPT = 14;
+/** How long to wait before trying a save that failed again. */
+const SAVE_RETRY_AFTER = 15_000;
 
 const DEFAULTS: Settings = {
   unit: 'mmol/L',
@@ -119,6 +121,8 @@ export class Store {
   loadError = $state<string | null>(null);
   /** Lines of the data file that could not be read, when that is why it was not opened. */
   unreadLines = $state(0);
+  /** Why the readings on screen are not all in the file. Null while the two agree. */
+  saveProblem = $state<string | null>(null);
   toasts = $state<Toast[]>([]);
   settingsOpen = $state(false);
   editing = $state<Reading | null>(null);
@@ -156,6 +160,7 @@ export class Store {
   /** Each toast's time left on screen, and its timer while counting down. */
   private toastClocks = new Map<number, { left: number; since: number; timer: ReturnType<typeof setTimeout> | null }>();
   private queue: Promise<void> = Promise.resolve();
+  private saveRetry: ReturnType<typeof setTimeout> | null = null;
 
   async init(): Promise<void> {
     try {
@@ -272,7 +277,9 @@ export class Store {
     if (patch.background !== undefined) void setBackgroundMode(this.settings.background);
     if (fileChanged) {
       // Queued, so saves already waiting finish with the old file before the new one is read.
-      this.queue = this.queue.then(() => this.loadReadings('switch'));
+      this.queue = this.queue.then(async () => {
+        await this.loadReadings('switch');
+      });
       await this.queue;
     }
   }
@@ -292,12 +299,14 @@ export class Store {
   /**
    * 'external' folds a hand-edited file into memory; 'switch' restarts the sync engine from the new file.
    * A file with lines that can't be read is only opened with `keepReadable`, after a backup.
+   * Resolves false when the file could not be read.
    */
-  async loadReadings(mode: 'open' | 'external' | 'switch' = 'open', keepReadable = false): Promise<void> {
+  async loadReadings(mode: 'open' | 'external' | 'switch' = 'open', keepReadable = false): Promise<boolean> {
     const external = mode === 'external';
     if (!external) {
       this.loadError = null;
       this.unreadLines = 0;
+      this.saved();
     }
     const path = external ? this.rowsFile : this.dataPath;
     try {
@@ -306,7 +315,7 @@ export class Store {
         // A file that vanished, often only for a moment under a sync tool, is written back instead of emptying the list.
         this.fileMtime = null;
         void this.persist(false);
-        return;
+        return true;
       }
       const mtime = await fileMtime(path);
       const parsed = text ? parseReadings(text, this.settings.unit) : null;
@@ -347,39 +356,47 @@ export class Store {
       if (mode === 'switch') this.sync.replace(rows);
       else if (this.ready) this.sync.push(rows);
       if (rewrite) void this.persist(false);
+      return true;
     } catch (e) {
       if (external) {
-        this.toast(`Couldn't reload the file: ${message(e)}`);
-        return;
+        // Writing now would replace whatever the file holds, so it waits until the file reads again.
+        this.notSaved(`The readings file was changed outside Honeycomb and can't be read, so nothing is saved until it can be. ${message(e)}`);
+        return false;
       }
       this.rows = [];
       this.rowsFile = path;
       this.failedLoad = mode;
       this.loadError = message(e);
+      return false;
     }
   }
 
   /** Reads the file that failed to load again, the same way as before. */
-  retryLoad(keepReadable = false): Promise<void> {
+  retryLoad(keepReadable = false): Promise<boolean> {
     return this.loadReadings(this.failedLoad, keepReadable);
   }
 
   /** Runs after any queued writes, so the app's own saves are never mistaken for outside edits. */
   private checkExternalChange(): Promise<void> {
     this.queue = this.queue.then(async () => {
-      if (this.ready) await this.reloadIfChanged();
+      if (!this.ready) return;
+      const file = await this.reloadIfChanged();
+      if (file === 'same' && this.saveProblem) void this.persist(false);
     });
     return this.queue;
   }
 
-  /** Folds in the file when something else changed it since the app last read or wrote it. Runs inside the queue. */
-  private async reloadIfChanged(): Promise<boolean> {
-    if (!this.rowsFile || this.loadError) return false;
+  /**
+   * Folds in the file when something else changed it since the app last read or wrote it. Runs inside the queue.
+   * After 'reloaded' the merged readings are saved by the reload itself.
+   */
+  private async reloadIfChanged(): Promise<'same' | 'reloaded' | 'unreadable'> {
+    if (!this.rowsFile || this.loadError) return 'same';
     const m = await fileMtime(this.rowsFile);
-    if (m === this.fileMtime) return false;
-    await this.loadReadings('external');
+    if (m === this.fileMtime) return 'same';
+    if (!(await this.loadReadings('external'))) return 'unreadable';
     if (m !== null) this.toast('Readings reloaded from file');
-    return true;
+    return 'reloaded';
   }
 
   private persist(push = true): Promise<void> {
@@ -390,18 +407,39 @@ export class Store {
     if (push) this.sync.push(snapshot);
     this.queue = this.queue.then(async () => {
       try {
-        // The reload saves the merged readings itself.
-        if (file === this.rowsFile && (await this.reloadIfChanged())) return;
+        if (file === this.rowsFile && (await this.reloadIfChanged()) !== 'same') return;
         await this.backupOncePerDay(file);
         const mtime = await writeText(file, readingsToCsv(snapshot));
         if (file !== this.rowsFile) return;
         this.fileMtime = mtime;
         this.onDisk = diskKeys(snapshot);
+        this.saved();
       } catch (e) {
-        this.toast(`Could not save: ${String(e)}`);
+        if (file === this.rowsFile) this.notSaved(`Your latest changes aren't in the readings file yet. ${message(e)}`);
+        else this.toast(`Could not save: ${message(e)}`);
       }
     });
     return this.queue;
+  }
+
+  /** Tries again now to bring the file up to date with what is on screen. */
+  retrySave(): Promise<void> {
+    return this.persist(false);
+  }
+
+  private saved(): void {
+    this.saveProblem = null;
+    if (this.saveRetry) clearTimeout(this.saveRetry);
+    this.saveRetry = null;
+  }
+
+  /** Keeps the reason on screen and tries the save again after a while. */
+  private notSaved(why: string): void {
+    this.saveProblem = why;
+    this.saveRetry ??= setTimeout(() => {
+      this.saveRetry = null;
+      if (this.saveProblem) void this.persist(false);
+    }, SAVE_RETRY_AFTER);
   }
 
   private async backupOncePerDay(file: string): Promise<void> {

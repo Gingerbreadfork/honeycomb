@@ -70,6 +70,12 @@
 
 <div class="app" class:tauri={isDesktop} class:mobile={isMobile} class:maximized={app.maximized}>
   <TitleBar />
+  {#if app.saveProblem && !app.loadError}
+    <div class="unsaved" role="alert">
+      <p>{app.saveProblem}</p>
+      <button type="button" class="btn" onclick={() => void app.retrySave()}>Try again</button>
+    </div>
+  {/if}
   <main>
     {#if app.startError || app.loadError}
       <div class="trouble" role="alert">
@@ -160,6 +166,20 @@
     position: absolute;
     inset: 0;
     animation: rise-in var(--t-slow) var(--ease-out);
+  }
+  .unsaved {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--line-strong);
+    background: var(--high-soft);
+    font-size: 14px;
+  }
+  .unsaved p {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
   .trouble {
     display: flex;
@@ -259,7 +279,8 @@
       position: static;
       animation: none;
     }
-    .edge {
+    .edge,
+    .unsaved {
       display: none;
     }
   }

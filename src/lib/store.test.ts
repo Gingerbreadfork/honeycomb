@@ -236,6 +236,41 @@ describe('Store', () => {
     expect(store.readings.map((r) => r.id)).toEqual(['a']);
   });
 
+  it('says the readings are not saved while a changed file cannot be read, and saves once it can', async () => {
+    const { store } = await openStore([line('a', 8, '6.4')]);
+    put(DATA, fileOf([line('a', 8, '6.4'), line('b', 12, '7.1')]));
+    const edited = onDisk();
+    unreadable.add(DATA);
+    const saved = store.add(typed);
+    await inside(store).queue;
+    expect(onDisk()).toBe(edited);
+    expect(store.saveProblem).toMatch(/Permission denied/);
+    expect(store.toasts.map((t) => t.text)).not.toContain('Readings reloaded from file');
+
+    unreadable.clear();
+    await store.retrySave();
+    await inside(store).queue;
+    expect(store.saveProblem).toBeNull();
+    expect(store.readings.map((r) => r.id).sort()).toEqual(['a', 'b', saved.id].sort());
+    expect(onDisk()).toContain(saved.id);
+    expect(onDisk()).toContain(',b,');
+  });
+
+  it('keeps a save that failed in mind and writes it when the window comes back', async () => {
+    const { store } = await openStore([line('a', 8, '6.4')]);
+    unwritable.add(DATA);
+    const saved = store.add(typed);
+    await inside(store).queue;
+    expect(store.saveProblem).toMatch(/Read-only file system/);
+    expect(onDisk()).not.toContain(saved.id);
+
+    unwritable.clear();
+    await inside(store).checkExternalChange();
+    await inside(store).queue;
+    expect(store.saveProblem).toBeNull();
+    expect(onDisk()).toContain(saved.id);
+  });
+
   it('leaves a file with lines it cannot read alone until told to open it without them', async () => {
     put(DATA, fileOf([line('a', 8, '6.4'), line('needs-repair', 9, 'typo')]));
     const original = onDisk();
