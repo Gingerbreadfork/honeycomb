@@ -313,9 +313,9 @@ export class Store {
     const path = external ? this.rowsFile : this.dataPath;
     try {
       const text = await readText(path);
-      if (external && text === null) {
-        // A file that vanished, often only for a moment under a sync tool, is written back instead of emptying the list.
-        this.fileMtime = null;
+      if (external && !text?.trim()) {
+        // A file that vanished or was emptied, often only for a moment under a sync tool, is written back instead of emptying the list.
+        this.fileMtime = await fileMtime(path);
         void this.persist(false);
         return true;
       }
@@ -346,10 +346,13 @@ export class Store {
           );
           this.toast(`${unreadable(skipped)}, so ${skipped.length === 1 ? 'it was' : 'they were'} left out.${kept}`);
         }
-        const edit = reconcileExternal(this.rows, rows, this.onDisk, skipped.length === 0);
+        // A file that stops without a line break may still be on its way to disk, so lines missing from it are not taken as removed.
+        const whole = skipped.length === 0 && /[\r\n]$/.test(text ?? '');
+        const edit = reconcileExternal(this.rows, rows, this.onDisk, whole);
         rows = edit.rows;
         rewrite = true;
         if (edit.kept) this.toast(`Kept ${edit.kept} reading${edit.kept === 1 ? '' : 's'} missing from the file. Delete them here to remove them everywhere.`);
+        this.toast('Readings reloaded from file');
       }
       this.rows = rows;
       this.rowsFile = path;
@@ -396,9 +399,7 @@ export class Store {
     if (!this.rowsFile || this.loadError) return 'same';
     const m = await fileMtime(this.rowsFile);
     if (m === this.fileMtime) return 'same';
-    if (!(await this.loadReadings('external'))) return 'unreadable';
-    if (m !== null) this.toast('Readings reloaded from file');
-    return 'reloaded';
+    return (await this.loadReadings('external')) ? 'reloaded' : 'unreadable';
   }
 
   private persist(push = true): Promise<void> {

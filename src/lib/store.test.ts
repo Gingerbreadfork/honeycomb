@@ -161,6 +161,27 @@ describe('Store', () => {
     expect(onDisk()).toContain(',b,');
   });
 
+  it('writes the readings back when the file is emptied', async () => {
+    const { store } = await openStore([line('a', 8, '6.4'), line('b', 12, '7.1')]);
+    put(DATA, '');
+    await inside(store).checkExternalChange();
+    await inside(store).queue;
+    expect(store.rows.filter((r) => r.deleted)).toEqual([]);
+    expect(onDisk()).toContain(',a,');
+    expect(onDisk()).toContain(',b,');
+    expect(store.toasts.map((t) => t.text)).not.toContain('Readings reloaded from file');
+  });
+
+  it('does not take lines missing from a file cut short as removed', async () => {
+    const { store } = await openStore([line('a', 8, '6.4'), line('b', 12, '7.1'), line('c', 18, '5.5')]);
+    put(DATA, [HEADER, line('a', 8, '6.4'), line('b', 12, '7.1')].join('\n'));
+    await inside(store).checkExternalChange();
+    await inside(store).queue;
+    expect(store.readings.map((r) => r.id)).toEqual(['a', 'b', 'c']);
+    expect(store.toasts.map((t) => t.text)).toContain('Kept 1 reading missing from the file. Delete them here to remove them everywhere.');
+    expect(onDisk()).toContain(',c,');
+  });
+
   it('keeps a hand edit made while the window was hidden when a pull is saved', async () => {
     const { store } = await openStore([line('a', 8, '6.4'), line('b', 12, '7.1')]);
     put(DATA, fileOf([line('a', 8, '6.4'), line('b', 12, '9.9')]));
