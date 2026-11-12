@@ -75,6 +75,16 @@
   </screenshots>
 
   <releases>
+    <release version="0.5.0" date="2026-11-12">
+      <description>
+        <p>
+          Honeycomb now says when your readings haven't reached the file, keeps trying, and asks
+          before quitting with them unsaved. Imports read more files correctly and can bring back
+          a reading you deleted by mistake. A reading that shows the same number as your target
+          counts as in range, and pairing is harder for another device to interfere with.
+        </p>
+      </description>
+    </release>
     <release version="0.4.2" date="2026-11-07">
       <description>
         <p>
