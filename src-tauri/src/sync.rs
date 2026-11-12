@@ -6,7 +6,7 @@ use std::{
 };
 
 use iroh::{
-    address_lookup::UserData,
+    address_lookup::{self, AddressLookup, AddressLookupBuilder, AddressLookupBuilderError, DnsAddressLookup, EndpointData, PkarrPublisher, PkarrResolver, UserData},
     endpoint::{presets, Connection, ConnectionError, VarInt},
     Endpoint, EndpointAddr, EndpointId, RelayMode, SecretKey, TransportAddr,
 };
@@ -257,6 +257,32 @@ pub struct SyncEngine {
 }
 
 pub type Shared = Arc<SyncEngine>;
+
+/// Builds an address lookup that publishes without the device name. The name is for devices on
+/// the same network, not for a public server.
+#[derive(Debug)]
+struct WithoutName<B>(B);
+
+impl<B: AddressLookupBuilder> AddressLookupBuilder for WithoutName<B> {
+    fn into_address_lookup(self, endpoint: &Endpoint) -> Result<impl AddressLookup, AddressLookupBuilderError> {
+        Ok(Nameless(self.0.into_address_lookup(endpoint)?))
+    }
+}
+
+#[derive(Debug)]
+struct Nameless<T>(T);
+
+impl<T: AddressLookup> AddressLookup for Nameless<T> {
+    fn publish(&self, data: &EndpointData) {
+        let mut data = data.clone();
+        data.set_user_data(None);
+        self.0.publish(&data);
+    }
+
+    fn resolve(&self, endpoint_id: EndpointId) -> Option<n0_future::boxed::BoxStream<Result<address_lookup::Item, address_lookup::Error>>> {
+        self.0.resolve(endpoint_id)
+    }
+}
 
 /// Marks an on-screen pairing started from this device as under way until dropped.
 struct Starting<'a>(&'a SyncEngine);
@@ -562,7 +588,16 @@ impl SyncEngine {
             .unwrap_or_else(|| clean_device_name(&default_device_name()));
 
         let user_data = advert(&device_name)?;
-        let builder = if net.relays { Endpoint::builder(presets::N0) } else { Endpoint::builder(presets::Minimal).relay_mode(RelayMode::Disabled) };
+        let builder = if net.relays {
+            // The preset's own lookups, with the public one kept from publishing the device name.
+            Endpoint::builder(presets::N0)
+                .clear_address_lookup()
+                .address_lookup(WithoutName(PkarrPublisher::n0_dns()))
+                .address_lookup(PkarrResolver::n0_dns())
+                .address_lookup(DnsAddressLookup::n0_dns())
+        } else {
+            Endpoint::builder(presets::Minimal).relay_mode(RelayMode::Disabled)
+        };
         let endpoint = builder
             .secret_key(secret)
             .alpns(vec![ALPN_SYNC.to_vec(), ALPN_PAIR.to_vec()])
@@ -1311,6 +1346,24 @@ mod tests {
 
     fn ids(d: &Device) -> Vec<String> {
         d.engine.inner.lock().unwrap().rows.keys().cloned().collect()
+    }
+
+    #[test]
+    fn the_public_lookup_is_not_told_the_device_name() {
+        #[derive(Debug, Default)]
+        struct Seen(Mutex<Vec<EndpointData>>);
+        impl AddressLookup for Seen {
+            fn publish(&self, data: &EndpointData) {
+                self.0.lock().unwrap().push(data.clone());
+            }
+        }
+        let seen = Arc::new(Seen::default());
+        let relay: iroh::RelayUrl = "https://relay.example./".parse().unwrap();
+        let data = EndpointData::new(vec![TransportAddr::Relay(relay.clone())]).with_user_data(advert("Sam's laptop").unwrap());
+        Nameless(seen.clone()).publish(&data);
+        let published = seen.0.lock().unwrap();
+        assert_eq!(published[0].user_data(), None);
+        assert_eq!(published[0].relay_urls().collect::<Vec<_>>(), [&relay]);
     }
 
     #[test]
