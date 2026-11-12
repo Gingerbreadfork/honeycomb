@@ -39,7 +39,7 @@
   const xTicks = $derived(innerW > 420 ? [0, 3, 6, 9, 12, 15, 18, 21, 24] : [0, 6, 12, 18, 24]);
 
   const points = $derived(
-    readings.map((r, i) => ({ i, r, px: x(hourOfDay(r.time)), py: y(r.mmol), tone: toneOf(statusOf(r.mmol, targets)) })),
+    readings.map((r, i) => ({ i, r, px: x(hourOfDay(r.time)), py: y(r.mmol), tone: toneOf(statusOf(r.mmol, targets, unit)) })),
   );
 
   const medianPath = $derived.by(() => {
@@ -127,7 +127,7 @@
   {#if hovered}
     <div class="tip" class:left={tipLeft} style:left="{hovered.px}px" style:top="{hovered.py}px">
       <div class="tip-value">{formatValue(hovered.r.mmol, unit)} <span>{unit}</span></div>
-      <div class="tip-row"><span class="dot {hovered.tone}"></span>{STATUS_LABEL[statusOf(hovered.r.mmol, targets)]}</div>
+      <div class="tip-row"><span class="dot {hovered.tone}"></span>{STATUS_LABEL[statusOf(hovered.r.mmol, targets, unit)]}</div>
       <div class="tip-muted">{fmtDateTime(hovered.r.time)}</div>
     </div>
   {/if}

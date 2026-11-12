@@ -20,11 +20,11 @@
   const unit = $derived(app.settings.unit);
   const mmol = $derived(parseInput(text, unit));
   const hint = $derived(inputHint(text, unit));
-  const status = $derived(mmol === null ? null : statusOf(mmol, app.settings.targets));
+  const status = $derived(mmol === null ? null : statusOf(mmol, app.settings.targets, unit));
   const time = $derived(pinnedTime ?? app.now);
   const placeholder = $derived(unit === 'mmol/L' ? '0.0' : '0');
   const last = $derived(app.readings.length ? app.readings[app.readings.length - 1] : null);
-  const lastStatus = $derived(last ? statusOf(last.mmol, app.settings.targets) : null);
+  const lastStatus = $derived(last ? statusOf(last.mmol, app.settings.targets, unit) : null);
 
   function save(): void {
     if (mmol === null) {

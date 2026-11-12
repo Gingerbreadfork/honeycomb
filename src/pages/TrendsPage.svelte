@@ -23,10 +23,10 @@ import DailyAverageChart from '../components/charts/DailyAverageChart.svelte';
   const days = $derived(range.custom ? 0 : range.days);
   const current = $derived(filterRange(app.readings, from, to));
   const previous = $derived(range.custom || days ? filterRange(app.readings, addDays(from, -spanDays), from) : []);
-  const stats = $derived(computeStats(current, targets, spanDays));
-  const prev = $derived(computeStats(previous, targets, spanDays));
+  const stats = $derived(computeStats(current, targets, unit, spanDays));
+  const prev = $derived(computeStats(previous, targets, unit, spanDays));
   const byWeek = $derived(spanDays > 21);
-  const buckets = $derived(tirBuckets(current, targets, from, to, byWeek));
+  const buckets = $derived(tirBuckets(current, targets, unit, from, to, byWeek));
   const daily = $derived(dailyAverages(current, from, to));
 
   const prevLabel = $derived(range.custom ? `vs previous ${spanDays} days` : days ? `vs previous ${days} days` : '');

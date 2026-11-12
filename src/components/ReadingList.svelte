@@ -26,7 +26,7 @@
       </header>
       <ul>
         {#each g.readings as r (r.id)}
-          {@const st = statusOf(r.mmol, targets)}
+          {@const st = statusOf(r.mmol, targets, unit)}
           <li class:fresh={app.lastSaved?.id === r.id}>
             <button type="button" class="row" onclick={() => (app.editing = r)} title="Edit reading">
               <span class="time tnum">{fmtTime(r.time)}</span>

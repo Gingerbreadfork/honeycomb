@@ -59,7 +59,7 @@
       d,
       px: x(d.start.getTime() + 432e5),
       py: d.mean === null ? m.top : y(d.mean),
-      tone: d.mean === null ? null : toneOf(statusOf(d.mean, targets)),
+      tone: d.mean === null ? null : toneOf(statusOf(d.mean, targets, unit)),
     })),
   );
   const withData = $derived(points.filter((p) => p.d.mean !== null));
@@ -162,7 +162,7 @@
       <div class="tip-title">{fmtWeekday(hovered.d.start)} {fmtShortDate(hovered.d.start)}</div>
       {#if hovered.d.mean !== null && hovered.tone}
         <div class="tip-value">{formatValue(hovered.d.mean, unit)} <span>{unit}</span></div>
-        <div class="tip-row"><span class="dot {hovered.tone}"></span>{STATUS_LABEL[statusOf(hovered.d.mean, targets)]}</div>
+        <div class="tip-row"><span class="dot {hovered.tone}"></span>{STATUS_LABEL[statusOf(hovered.d.mean, targets, unit)]}</div>
         <div class="tip-muted">
           {hovered.d.count} reading{hovered.d.count === 1 ? '' : 's'}{#if spread(hovered.d)}, {spread(hovered.d)}{/if}
         </div>

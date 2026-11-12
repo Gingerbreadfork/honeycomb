@@ -30,7 +30,7 @@
   const hint = $derived(inputHint(text, unit));
   const when = $derived(fromInputs(date, time));
   const future = $derived(when !== null && isFuture(new Date(instantMs(when, reading.offset)), app.now));
-  const status = $derived(mmol === null ? null : statusOf(mmol, app.settings.targets));
+  const status = $derived(mmol === null ? null : statusOf(mmol, app.settings.targets, unit));
   const valid = $derived(mmol !== null && when !== null && !future);
 
   function save(): void {

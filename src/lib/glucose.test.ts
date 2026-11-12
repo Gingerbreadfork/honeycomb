@@ -42,11 +42,21 @@ describe('glucose', () => {
   });
 
   it('classifies against the target range', () => {
-    expect(statusOf(2.9, DEFAULT_TARGETS)).toBe('very-low');
-    expect(statusOf(3.5, DEFAULT_TARGETS)).toBe('low');
-    expect(statusOf(6.4, DEFAULT_TARGETS)).toBe('in-range');
-    expect(statusOf(11.2, DEFAULT_TARGETS)).toBe('high');
-    expect(statusOf(15, DEFAULT_TARGETS)).toBe('very-high');
+    expect(statusOf(2.9, DEFAULT_TARGETS, 'mmol/L')).toBe('very-low');
+    expect(statusOf(3.5, DEFAULT_TARGETS, 'mmol/L')).toBe('low');
+    expect(statusOf(6.4, DEFAULT_TARGETS, 'mmol/L')).toBe('in-range');
+    expect(statusOf(11.2, DEFAULT_TARGETS, 'mmol/L')).toBe('high');
+    expect(statusOf(15, DEFAULT_TARGETS, 'mmol/L')).toBe('very-high');
+  });
+
+  it('counts a reading that shows the same number as a target as in range', () => {
+    const mgdl = (v: number) => statusOf(toMmol(v, 'mg/dL'), DEFAULT_TARGETS, 'mg/dL');
+    expect([53, 54, 69, 70, 180, 181, 250, 251].map(mgdl)).toEqual(['very-low', 'low', 'low', 'in-range', 'in-range', 'high', 'high', 'very-high']);
+    expect(statusOf(toMmol(70, 'mg/dL'), DEFAULT_TARGETS, 'mmol/L')).toBe('in-range');
+    expect(statusOf(toMmol(69, 'mg/dL'), DEFAULT_TARGETS, 'mmol/L')).toBe('low');
+    expect(statusOf(3.9, DEFAULT_TARGETS, 'mg/dL')).toBe('in-range');
+    expect(statusOf(10, DEFAULT_TARGETS, 'mmol/L')).toBe('in-range');
+    expect(statusOf(10.1, DEFAULT_TARGETS, 'mmol/L')).toBe('high');
   });
 
   it('formats and estimates A1c', () => {

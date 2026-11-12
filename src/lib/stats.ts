@@ -1,4 +1,4 @@
-import { gmi, statusOf, toneOf, type Reading, type Targets, type Tone } from './glucose';
+import { gmi, statusOf, toneOf, type Reading, type Targets, type Tone, type Unit } from './glucose';
 import { addDays, dayKey, startOfDay } from './time';
 
 export interface TirSplit {
@@ -23,7 +23,7 @@ export interface Stats {
   fastingCount: number;
 }
 
-export function computeStats(readings: Reading[], targets: Targets, spanDays?: number): Stats {
+export function computeStats(readings: Reading[], targets: Targets, unit: Unit, spanDays?: number): Stats {
   const n = readings.length;
   const counts: TirSplit = { low: 0, inRange: 0, high: 0 };
   let sum = 0;
@@ -36,7 +36,7 @@ export function computeStats(readings: Reading[], targets: Targets, spanDays?: n
     sum += r.mmol;
     if (!min || r.mmol < min.mmol) min = r;
     if (!max || r.mmol > max.mmol) max = r;
-    const tone = toneOf(statusOf(r.mmol, targets));
+    const tone = toneOf(statusOf(r.mmol, targets, unit));
     if (tone === 'low') counts.low++;
     else if (tone === 'high' || tone === 'very-high') counts.high++;
     else counts.inRange++;
@@ -113,7 +113,7 @@ export interface Bucket {
 }
 
 /** Splits a span into day or week buckets with time-in-range counts. */
-export function tirBuckets(readings: Reading[], targets: Targets, from: Date, to: Date, byWeek: boolean): Bucket[] {
+export function tirBuckets(readings: Reading[], targets: Targets, unit: Unit, from: Date, to: Date, byWeek: boolean): Bucket[] {
   const buckets: Bucket[] = [];
   let cursor = startOfDay(from);
   while (cursor < to) {
@@ -125,7 +125,7 @@ export function tirBuckets(readings: Reading[], targets: Targets, from: Date, to
     const t = r.time.getTime();
     const b = buckets.find((x) => t >= x.start.getTime() && t < x.end.getTime());
     if (!b) continue;
-    const tone: Tone = toneOf(statusOf(r.mmol, targets));
+    const tone: Tone = toneOf(statusOf(r.mmol, targets, unit));
     if (tone === 'low') b.counts.low++;
     else if (tone === 'high' || tone === 'very-high') b.counts.high++;
     else b.counts.inRange++;

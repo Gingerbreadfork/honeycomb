@@ -77,11 +77,17 @@ export function targetsProblem(low: number, high: number, unit: Unit): string | 
   return null;
 }
 
-export function statusOf(mmol: number, t: Targets): Status {
-  if (mmol < VERY_LOW) return 'very-low';
-  if (mmol < t.low) return 'low';
-  if (mmol > VERY_HIGH) return 'very-high';
-  if (mmol > t.high) return 'high';
+/**
+ * Judges a reading by the number shown for it in `unit`. A reading that shows the same number as a
+ * target is in range, whichever unit it was logged in.
+ */
+export function statusOf(mmol: number, t: Targets, unit: Unit): Status {
+  const shown = (v: number) => roundForUnit(fromMmol(v, unit), unit);
+  const value = shown(mmol);
+  if (value < shown(VERY_LOW)) return 'very-low';
+  if (value < shown(t.low)) return 'low';
+  if (value > shown(VERY_HIGH)) return 'very-high';
+  if (value > shown(t.high)) return 'high';
   return 'in-range';
 }
 

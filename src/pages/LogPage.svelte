@@ -18,7 +18,7 @@
   const from = $derived(startOfDay(addDays(anchor, -6)));
   const to = $derived(addDays(startOfDay(anchor), 1));
   const week = $derived(filterRange(app.readings, from, to));
-  const stats = $derived(computeStats(week, targets, 7));
+  const stats = $derived(computeStats(week, targets, unit, 7));
 
   // The newest `limit` readings, extended to the start of the oldest day shown so no day is cut in half.
   const listed = $derived.by(() => {
