@@ -162,6 +162,7 @@ export class Store {
   /** Each toast's time left on screen, and its timer while counting down. */
   private toastClocks = new Map<number, { left: number; since: number; timer: ReturnType<typeof setTimeout> | null }>();
   private queue: Promise<void> = Promise.resolve();
+  private settingsQueue: Promise<void> = Promise.resolve();
   private saveRetry: ReturnType<typeof setTimeout> | null = null;
 
   async init(): Promise<void> {
@@ -262,9 +263,15 @@ export class Store {
     }
   }
 
-  private async persistSettings(): Promise<void> {
-    if (!this.paths) return;
-    await writeText(this.paths.settings_file, JSON.stringify(this.settings, null, 2) + '\n');
+  /** One write at a time, each with the settings as they are when its turn comes, so the newest always lands last. */
+  private persistSettings(): Promise<void> {
+    const file = this.paths?.settings_file;
+    if (!file) return Promise.resolve();
+    const written = this.settingsQueue.then(async () => {
+      await writeText(file, JSON.stringify(this.settings, null, 2) + '\n');
+    });
+    this.settingsQueue = written.catch(() => {});
+    return written;
   }
 
   async updateSettings(patch: Partial<Settings>): Promise<void> {

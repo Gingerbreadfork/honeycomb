@@ -75,7 +75,8 @@ fn in_flatpak() -> bool {
 
 /// Returns None when the file does not exist yet. Text that isn't UTF-8 is an error, so a later save
 /// can't write replacement characters over it; `lossy` reads it anyway, for imports.
-#[tauri::command]
+/// The file commands run off the main thread, so a slow disk never freezes the window.
+#[tauri::command(async)]
 fn read_text(path: String, lossy: Option<bool>) -> Result<Option<String>, String> {
     match std::fs::read(&path) {
         Ok(bytes) if lossy.unwrap_or(false) => Ok(Some(String::from_utf8_lossy(&bytes).into_owned())),
@@ -133,8 +134,11 @@ pub(crate) fn rename_over(from: &Path, to: &Path) -> std::io::Result<()> {
 
 /// Writes to a sibling temp file, then renames over the target. On Unix a file that already exists
 /// keeps its permissions. A symlink is written through, not replaced. Returns the new mtime.
-#[tauri::command]
+#[tauri::command(async)]
 fn write_text(path: String, text: String) -> Result<Option<u64>, String> {
+    // One write at a time, so two saves of the same file never share its temp file.
+    static WRITING: Mutex<()> = Mutex::new(());
+    let _writing = WRITING.lock().unwrap_or_else(|e| e.into_inner());
     let mut path = PathBuf::from(path);
     if std::fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_symlink()) {
         path = std::fs::canonicalize(&path).map_err(|e| e.to_string())?;
@@ -162,7 +166,7 @@ fn backups_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 }
 
 /// Copies the file into the backups folder unless one with this label exists, then keeps the newest `keep`.
-#[tauri::command]
+#[tauri::command(async)]
 fn backup_file(app: tauri::AppHandle, path: String, label: String, keep: usize) -> Result<Option<String>, String> {
     let src = PathBuf::from(path);
     if !src.is_file() || label.is_empty() || !label.chars().all(|c| c.is_ascii_digit() || c == '-') {
@@ -217,7 +221,7 @@ fn backups_path(app: tauri::AppHandle) -> Result<String, String> {
     backups_dir(&app).map(|p| p.to_string_lossy().into_owned())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn file_mtime(path: String) -> Option<u64> {
     mtime_of(Path::new(&path))
 }
