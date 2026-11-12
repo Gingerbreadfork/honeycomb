@@ -252,7 +252,8 @@ export function parseReadings(text: string, fallbackUnit: Unit, choice: ColumnCh
     const taken = instantMs(time, offset);
     const id = (idCol >= 0 ? (r[idCol] ?? '').trim() : '') || legacyId(new Date(taken), valueText, unit, context, note);
     const updatedText = updatedCol >= 0 ? (r[updatedCol] ?? '').trim() : '';
-    const updated = updatedText ? (parseTime(updatedText)?.getTime() ?? taken) : taken;
+    // Never before 1970, which sync has no way to write.
+    const updated = Math.max(0, updatedText ? (parseTime(updatedText)?.getTime() ?? taken) : taken);
     const deletedText = deletedCol >= 0 ? (r[deletedCol] ?? '').trim() : '';
     const deleted = deletedText ? (parseTime(deletedText)?.getTime() ?? null) : null;
     out.push({ id, time, offset, mmol, unit, context, note, updated, deleted });

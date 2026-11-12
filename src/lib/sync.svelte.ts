@@ -49,7 +49,10 @@ interface Row {
   deleted: number | null;
 }
 
-function toRow(r: Reading): Row {
+/** The engine keeps stamps as whole milliseconds from 1970 on, and turns away a list holding any other. */
+const stamp = (ms: number) => Math.max(0, Math.round(ms));
+
+export function toRow(r: Reading): Row {
   return {
     id: r.id,
     time: toLocalIso(r.time, false, r.offset),
@@ -57,8 +60,8 @@ function toRow(r: Reading): Row {
     unit: r.unit,
     context: r.context,
     note: r.note,
-    updated: r.updated,
-    deleted: r.deleted,
+    updated: stamp(r.updated),
+    deleted: r.deleted === null ? null : stamp(r.deleted),
   };
 }
 
@@ -90,6 +93,8 @@ const MOCK: SyncSnapshot = {
 export class SyncState {
   snapshot = $state<SyncSnapshot | null>(null);
   error = $state<string | null>(null);
+  /** Why the engine turned away this device's readings. Null once a list has gone through. */
+  pushError = $state<string | null>(null);
   pairRequest = $state<PairRequest | null>(null);
   waitingCode = $state<string | null>(null);
   /** The other device accepted; this one still has to agree the codes matched. */
@@ -99,6 +104,9 @@ export class SyncState {
   onPaired: ((device: DeviceInfo) => void) | null = null;
   /** This device said yes, but the user on the other one did not. */
   onPairCancelled: ((device: DeviceInfo) => void) | null = null;
+  /** Called when the engine first turns the readings away, not for every list after that. */
+  onPushFailed: ((why: string) => void) | null = null;
+  private started = false;
 
   get configured(): boolean {
     return (this.snapshot?.peers.length ?? 0) > 0;
@@ -133,20 +141,32 @@ export class SyncState {
     await listen<PairRequest>('sync:pair-confirm', (e) => (this.pairConfirm = e.payload));
     try {
       this.snapshot = await invoke<SyncSnapshot>('sync_start');
+      this.started = true;
     } catch (e) {
       this.error = String(e);
     }
   }
 
   push(readings: Reading[]): void {
-    if (!isTauri) return;
-    void invoke('sync_set_rows', { rows: readings.map(toRow) }).catch(() => {});
+    this.hand('sync_set_rows', readings);
   }
 
   /** Drops what the engine holds and starts again from these rows. */
   replace(readings: Reading[]): void {
-    if (!isTauri) return;
-    void invoke('sync_replace_rows', { rows: readings.map(toRow) }).catch(() => {});
+    this.hand('sync_replace_rows', readings);
+  }
+
+  /** Gives the engine the readings. Before it has started there is nothing to give them to; the store sends them all once it has. */
+  private hand(command: 'sync_set_rows' | 'sync_replace_rows', readings: Reading[]): void {
+    if (!isTauri || !this.started) return;
+    invoke(command, { rows: readings.map(toRow) }).then(
+      () => (this.pushError = null),
+      (e) => {
+        const first = this.pushError === null;
+        this.pushError = String(e);
+        if (first) this.onPushFailed?.(this.pushError);
+      },
+    );
   }
 
   syncNow(): void {

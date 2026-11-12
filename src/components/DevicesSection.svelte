@@ -80,6 +80,9 @@
         </span>
       </label>
     {/if}
+    {#if app.sync.pushError}
+      <p class="warn">Changes made here aren't reaching your other devices: {app.sync.pushError}</p>
+    {/if}
   {:else if app.sync.error}
     <p class="warn">Sync couldn't start: {app.sync.error}</p>
   {:else}

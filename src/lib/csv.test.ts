@@ -89,6 +89,12 @@ describe('csv', () => {
     expect(readingsFromCsv(own, 'mmol/L')[0].id).toBe('k3v9tq2xm8pd');
   });
 
+  it('never stamps a row before 1970', () => {
+    const old = readingsFromCsv('time,glucose\n1960-09-01T08:00:00+00:00,6.4\n', 'mmol/L');
+    expect(old[0].time.getFullYear()).toBe(1960);
+    expect(old[0].updated).toBe(0);
+  });
+
   it('gives legacy rows a stable id and hides tombstones from the clean export', () => {
     const legacy = 'time,glucose,unit,context,note\n2026-09-01T07:30:00+10:00,6.1,mmol/L,fasting,\n';
     const a = readingsFromCsv(legacy, 'mmol/L');
