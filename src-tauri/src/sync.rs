@@ -25,6 +25,8 @@ const MAX_PAIR_MESSAGE: usize = 64 * 1024;
 const IO_TIMEOUT: Duration = Duration::from_secs(60);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(12);
 const PAIRING_TTL: Duration = Duration::from_secs(10 * 60);
+/// Wrong codes a device may be offered before the code it is showing stops working.
+const MAX_WRONG_CODES: u32 = 5;
 const SYNC_INTERVAL: Duration = Duration::from_secs(120);
 const CHANGE_DEBOUNCE: Duration = Duration::from_millis(1500);
 const MAX_DEVICE_NAME: usize = 60;
@@ -189,6 +191,7 @@ struct Pairing {
     secret: [u8; 4],
     code: String,
     expires: u64,
+    wrong: u32,
 }
 
 struct Inner {
@@ -806,7 +809,7 @@ impl SyncEngine {
         let secret = random_bytes::<4>()?;
         let code = encode_code(&PairCode { id: *self.endpoint.id().as_bytes(), secret, relay: self.my_relay().map(|u| compact_relay(&u)) });
         let expires = now_ms() + PAIRING_TTL.as_millis() as u64;
-        self.inner.lock().unwrap().pairing = Some(Pairing { secret, code: code.clone(), expires });
+        self.inner.lock().unwrap().pairing = Some(Pairing { secret, code: code.clone(), expires, wrong: 0 });
         self.emit_state();
         Ok(PairingState { code, expires })
     }
@@ -1000,8 +1003,23 @@ impl SyncEngine {
             let device = DeviceInfo { id: device.id, name: clean_device_name(&device.name) };
             let accepted = match secret {
                 Some(s) => {
-                    let g = self.inner.lock().unwrap();
-                    matches!(&g.pairing, Some(p) if p.secret == s && p.expires > now_ms())
+                    let (right, spent) = {
+                        let mut g = self.inner.lock().unwrap();
+                        let right = matches!(&g.pairing, Some(p) if p.secret == s && p.expires > now_ms());
+                        // A code that keeps being guessed at is withdrawn before its four bytes can be worked through.
+                        let spent = !right && g.pairing.as_mut().is_some_and(|p| {
+                            p.wrong += 1;
+                            p.wrong >= MAX_WRONG_CODES
+                        });
+                        if spent {
+                            g.pairing = None;
+                        }
+                        (right, spent)
+                    };
+                    if spent {
+                        self.emit_state();
+                    }
+                    right
                 }
                 None => {
                     if !PAIRS_ON_SCREEN {
@@ -1579,6 +1597,44 @@ mod tests {
             assert_eq!(b.ui.last("sync:pair-request")["code"].as_str(), Some(shown_on_a.as_str()));
             let shown_to_wary = wary.ui.last("sync:pair-waiting").as_str().unwrap().to_string();
             assert_ne!(shown_to_wary, shown_on_a, "every attempt gets its own code");
+        });
+    }
+
+    /// Offers `secret` to `target` the way a typed code would be, and returns the answer.
+    async fn offer_code(target: &Device, secret: [u8; 4]) -> Message {
+        let ep = Endpoint::builder(presets::Minimal).relay_mode(RelayMode::Disabled).bind().await.unwrap();
+        let conn = ep.connect(target.engine.my_addr(), ALPN_PAIR).await.unwrap();
+        let me = DeviceInfo { id: ep.id().to_string(), name: "guest".into() };
+        let msg = Message::Pair { device: me, addr: ep.addr(), secret: Some(secret), commit: None, confirms: false };
+        let answer = request(&conn, &msg, MAX_PAIR_MESSAGE).await.unwrap();
+        conn.close(0u32.into(), b"done");
+        answer
+    }
+
+    fn shown_secret(d: &Device) -> [u8; 4] {
+        d.engine.inner.lock().unwrap().pairing.as_ref().unwrap().secret
+    }
+
+    #[test]
+    fn a_code_stops_working_after_too_many_wrong_guesses() {
+        tauri::async_runtime::block_on(async {
+            let b = device("b", true).await;
+            b.engine.start_pairing().await.unwrap();
+            let secret = shown_secret(&b);
+            let wrong = [secret[0] ^ 1, secret[1], secret[2], secret[3]];
+            for _ in 0..MAX_WRONG_CODES {
+                assert!(matches!(offer_code(&b, wrong).await, Message::PairRejected { .. }));
+            }
+            assert!(b.engine.snapshot().pairing.is_none());
+            assert!(matches!(offer_code(&b, secret).await, Message::PairRejected { .. }));
+            assert!(b.engine.snapshot().peers.is_empty());
+
+            b.engine.start_pairing().await.unwrap();
+            let secret = shown_secret(&b);
+            assert!(matches!(offer_code(&b, [secret[0] ^ 1, secret[1], secret[2], secret[3]]).await, Message::PairRejected { .. }));
+            assert!(matches!(offer_code(&b, secret).await, Message::PairOk { .. }));
+            eventually("b saves the pairing", || b.engine.snapshot().peers.len() == 1).await;
+            assert!(b.engine.snapshot().pairing.is_none(), "a code works once");
         });
     }
 

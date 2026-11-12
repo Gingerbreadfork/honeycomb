@@ -1,6 +1,6 @@
 <script lang="ts">
   import { app } from '../lib/store.svelte';
-  import { copyText, isMobile, scanQr } from '../lib/platform';
+  import { copyText, isMobile, isTauri, scanQr } from '../lib/platform';
   import Icon from './Icon.svelte';
   import QrCode from './QrCode.svelte';
   import { pairingQrText } from '../lib/qr';
@@ -19,7 +19,10 @@
   const snap = $derived(app.sync.snapshot);
   const nearby = $derived(snap?.nearby.filter((n) => !n.paired) ?? []);
   const remaining = $derived(Math.max(1, Math.round((expires - app.now.getTime()) / 60000)));
-  const expired = $derived(code !== '' && expires <= app.now.getTime());
+  const timedOut = $derived(code !== '' && expires <= app.now.getTime());
+  /** The engine drops a code once it has been used, or offered wrongly too many times. */
+  const withdrawn = $derived(isTauri && code !== '' && snap != null && snap.pairing === null);
+  const expired = $derived(timedOut || withdrawn);
 
   async function showCode(): Promise<void> {
     error = null;
@@ -105,7 +108,7 @@
     <p class="hint">On the other device, open Settings, choose Pair a device, then Enter a code. A phone can scan the square instead of typing.</p>
     {#if expired}
       <div class="row">
-        <span class="muted">That code has expired.</span>
+        <span class="muted">{timedOut ? 'That code has expired.' : 'That code no longer works.'}</span>
         <button type="button" class="btn small" onclick={showCode}>Show a new code</button>
       </div>
     {:else if code}
