@@ -29,6 +29,8 @@ const SYNC_INTERVAL: Duration = Duration::from_secs(120);
 const CHANGE_DEBOUNCE: Duration = Duration::from_millis(1500);
 const MAX_DEVICE_NAME: usize = 60;
 const CLOSE_NOT_PAIRED: u32 = 1;
+/// A phone is never listed as nearby, so no honest device asks it to pair on screen.
+const PAIRS_ON_SCREEN: bool = !cfg!(target_os = "android");
 const TOMBSTONE_KEEP_MS: u64 = 730 * 24 * 60 * 60 * 1000;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -200,6 +202,8 @@ struct Inner {
     full_only: HashSet<String>,
     nearby: HashMap<String, (String, EndpointAddr)>,
     pairing: Option<Pairing>,
+    /// An on-screen pairing started from this device is under way.
+    starting: bool,
     pending: HashMap<u64, oneshot::Sender<bool>>,
     next_request: u64,
     ready: bool,
@@ -253,6 +257,15 @@ pub struct SyncEngine {
 }
 
 pub type Shared = Arc<SyncEngine>;
+
+/// Marks an on-screen pairing started from this device as under way until dropped.
+struct Starting<'a>(&'a SyncEngine);
+
+impl Drop for Starting<'_> {
+    fn drop(&mut self) {
+        self.0.inner.lock().unwrap().starting = false;
+    }
+}
 
 /// Writes through a temp file readable only by the user, then renames it into place.
 fn write_private(path: &Path, text: &str) -> std::io::Result<()> {
@@ -573,6 +586,7 @@ impl SyncEngine {
                 full_only: HashSet::new(),
                 nearby: HashMap::new(),
                 pairing: None,
+                starting: false,
                 pending: HashMap::new(),
                 next_request: 1,
                 ready: false,
@@ -821,6 +835,14 @@ impl SyncEngine {
             .get(id)
             .map(|(_, a)| a.clone())
             .ok_or_else(|| "That device is no longer nearby".to_string())?;
+        {
+            let mut g = self.inner.lock().unwrap();
+            if g.starting || !g.pending.is_empty() {
+                return Err("Finish the pairing that is already under way first".into());
+            }
+            g.starting = true;
+        }
+        let _starting = Starting(self);
         let device = self.device();
         let conn = tokio::time::timeout(CONNECT_TIMEOUT, self.endpoint.connect(addr.clone(), ALPN_PAIR))
             .await
@@ -947,6 +969,11 @@ impl SyncEngine {
                     matches!(&g.pairing, Some(p) if p.secret == s && p.expires > now_ms())
                 }
                 None => {
+                    if !PAIRS_ON_SCREEN {
+                        let _ = reply(&mut send, &Message::PairRejected { reason: "That device pairs with a code. Show one in its Devices settings.".into() }).await;
+                        wait_closed(&conn).await;
+                        return Ok(());
+                    }
                     let commit = commit.ok_or_else(|| "pair request without a commitment".to_string())?;
                     let my_nonce = random_bytes::<16>()?;
                     write_message(&mut send, &Message::PairChallenge { nonce: my_nonce }).await?;
@@ -959,13 +986,21 @@ impl SyncEngine {
                         return Ok(());
                     }
                     let code = pairing_code(&remote, &self.endpoint.id(), &their_nonce, &my_nonce);
-                    let (rx, req) = {
+                    // One pairing at a time, so the request on screen is never swapped for another.
+                    let asked = {
                         let mut g = self.inner.lock().unwrap();
-                        let request_id = g.next_request;
-                        g.next_request += 1;
-                        let (tx, rx) = oneshot::channel();
-                        g.pending.insert(request_id, tx);
-                        (rx, PairRequest { request_id, device: device.clone(), code })
+                        (!g.starting && g.pending.is_empty()).then(|| {
+                            let request_id = g.next_request;
+                            g.next_request += 1;
+                            let (tx, rx) = oneshot::channel();
+                            g.pending.insert(request_id, tx);
+                            (rx, PairRequest { request_id, device: device.clone(), code })
+                        })
+                    };
+                    let Some((rx, req)) = asked else {
+                        let _ = reply(&mut send, &Message::PairRejected { reason: "That device is in the middle of another pairing. Try again in a moment.".into() }).await;
+                        wait_closed(&conn).await;
+                        return Ok(());
                     };
                     self.emit("sync:pair-request", req.clone());
                     self.ui.show_window();
@@ -1491,6 +1526,53 @@ mod tests {
             assert_eq!(b.ui.last("sync:pair-request")["code"].as_str(), Some(shown_on_a.as_str()));
             let shown_to_wary = wary.ui.last("sync:pair-waiting").as_str().unwrap().to_string();
             assert_ne!(shown_to_wary, shown_on_a, "every attempt gets its own code");
+        });
+    }
+
+    /// Asks `target` to pair on screen from a bare endpoint, as far as revealing the nonce.
+    async fn knock(target: &Device, name: &str) -> (Endpoint, Connection, iroh::endpoint::SendStream, iroh::endpoint::RecvStream) {
+        let ep = Endpoint::builder(presets::Minimal).relay_mode(RelayMode::Disabled).bind().await.unwrap();
+        let conn = ep.connect(target.engine.my_addr(), ALPN_PAIR).await.unwrap();
+        let (mut send, mut recv) = conn.open_bi().await.unwrap();
+        let me = DeviceInfo { id: ep.id().to_string(), name: name.into() };
+        let start = Message::Pair { device: me, addr: ep.addr(), secret: None, commit: Some(commitment(&[1; 16])), confirms: true };
+        write_message(&mut send, &start).await.unwrap();
+        assert!(matches!(read_message(&mut recv, MAX_PAIR_MESSAGE).await, Ok(Message::PairChallenge { .. })));
+        write_message(&mut send, &Message::PairReveal { nonce: [1; 16] }).await.unwrap();
+        (ep, conn, send, recv)
+    }
+
+    #[test]
+    fn a_second_request_is_refused_while_one_is_on_screen() {
+        tauri::async_runtime::block_on(async {
+            let b = device("b", true).await;
+            // Nobody answers, so the first request stays on screen.
+            *b.ui.engine.lock().unwrap() = None;
+            let _first = knock(&b, "first").await;
+            eventually("b shows the first request", || b.ui.saw("sync:pair-request") == 1).await;
+            let (_ep, _conn, _send, mut recv) = knock(&b, "second").await;
+            assert!(matches!(read_message(&mut recv, MAX_PAIR_MESSAGE).await, Ok(Message::PairRejected { .. })));
+            assert_eq!(b.ui.saw("sync:pair-request"), 1);
+            assert_eq!(b.ui.last("sync:pair-request")["device"]["name"].as_str(), Some("first"));
+        });
+    }
+
+    #[test]
+    fn a_request_is_refused_while_this_device_is_pairing_with_another() {
+        tauri::async_runtime::block_on(async {
+            let a = device("a", true).await;
+            let b = device("b", true).await;
+            // b never answers, so a stays waiting for it.
+            *b.ui.engine.lock().unwrap() = None;
+            let b_id = b.engine.device().id;
+            a.engine.inner.lock().unwrap().nearby.insert(b_id.clone(), ("b".into(), b.engine.my_addr()));
+            let starter = a.engine.clone();
+            let waiting = tauri::async_runtime::spawn(async move { starter.pair_nearby(&b_id).await });
+            eventually("a waits for b", || a.ui.saw("sync:pair-waiting") == 1).await;
+            let (_ep, _conn, _send, mut recv) = knock(&a, "stranger").await;
+            assert!(matches!(read_message(&mut recv, MAX_PAIR_MESSAGE).await, Ok(Message::PairRejected { .. })));
+            assert_eq!(a.ui.saw("sync:pair-request"), 0);
+            waiting.abort();
         });
     }
 
