@@ -318,7 +318,8 @@ export class Store {
     if (!external) {
       this.loadError = null;
       this.unreadLines = 0;
-      this.saved();
+      this.clearSaveProblem();
+      this.leaving = null;
     }
     const path = external ? this.rowsFile : this.dataPath;
     try {
@@ -444,10 +445,14 @@ export class Store {
     return this.persist(false);
   }
 
-  private saved(): void {
+  private clearSaveProblem(): void {
     this.saveProblem = null;
     if (this.saveRetry) clearTimeout(this.saveRetry);
     this.saveRetry = null;
+  }
+
+  private saved(): void {
+    this.clearSaveProblem();
     // The save was all that held up a quit the user had asked for.
     const leave = this.leaving;
     this.leaving = null;
