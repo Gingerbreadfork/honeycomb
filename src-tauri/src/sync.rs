@@ -28,6 +28,8 @@ const PAIRING_TTL: Duration = Duration::from_secs(10 * 60);
 /// Wrong codes a device may be offered before the code it is showing stops working.
 const MAX_WRONG_CODES: u32 = 5;
 const SYNC_INTERVAL: Duration = Duration::from_secs(120);
+/// How often devices.json is rewritten when only the times of the last syncs have moved on.
+const SYNC_TIMES_SAVED_EVERY: Duration = Duration::from_secs(10 * 60);
 const CHANGE_DEBOUNCE: Duration = Duration::from_millis(1500);
 const MAX_DEVICE_NAME: usize = 60;
 const CLOSE_NOT_PAIRED: u32 = 1;
@@ -254,12 +256,19 @@ pub struct SyncEngine {
     dir: PathBuf,
     inner: Arc<Mutex<Inner>>,
     /// Held while devices.json is written, so two saves never share the temp file.
-    saving: Mutex<()>,
+    saving: Mutex<Saved>,
     wake: Arc<Notify>,
     full_exchanges: std::sync::atomic::AtomicUsize,
 }
 
 pub type Shared = Arc<SyncEngine>;
+
+/// What devices.json last held apart from sync times, and when it was written.
+#[derive(Default)]
+struct Saved {
+    lasting: String,
+    at: u64,
+}
 
 /// Builds an address lookup that publishes without the device name. The name is for devices on
 /// the same network, not for a public server.
@@ -629,7 +638,7 @@ impl SyncEngine {
                 next_request: 1,
                 ready: false,
             })),
-            saving: Mutex::new(()),
+            saving: Mutex::new(Saved::default()),
             wake: Arc::new(Notify::new()),
             full_exchanges: Default::default(),
         });
@@ -701,15 +710,25 @@ impl SyncEngine {
         DeviceInfo { id: self.endpoint.id().to_string(), name: self.inner.lock().unwrap().device_name.clone() }
     }
 
+    /// Writes devices.json. A change to names, addresses or the list goes out at once; sync times
+    /// alone wait, since every round moves them.
     fn save(&self) {
-        let _saving = self.saving.lock().unwrap();
+        let mut saved = self.saving.lock().unwrap();
         let (device_name, peers) = {
             let g = self.inner.lock().unwrap();
             (g.device_name.clone(), g.peers.clone())
         };
+        let untimed: Vec<Peer> = peers.iter().cloned().map(|p| Peer { last_sync: None, ..p }).collect();
+        let lasting = serde_json::to_string(&DevicesFile { device_name: Some(device_name.clone()), peers: untimed }).unwrap_or_default();
+        let now = now_ms();
+        if lasting == saved.lasting && now < saved.at + SYNC_TIMES_SAVED_EVERY.as_millis() as u64 {
+            return;
+        }
         let file = DevicesFile { device_name: Some(device_name), peers };
         if let Ok(text) = serde_json::to_string_pretty(&file) {
-            let _ = write_private(&self.dir.join("devices.json"), &text);
+            if write_private(&self.dir.join("devices.json"), &text).is_ok() {
+                *saved = Saved { lasting, at: now };
+            }
         }
     }
 
@@ -1472,6 +1491,26 @@ mod tests {
             a.engine.sync_all().await;
             assert_eq!(full_exchanges(&a), 2);
             assert_eq!(ids(&a), ["r1", "r2"]);
+        });
+    }
+
+    #[test]
+    fn sync_times_alone_do_not_rewrite_the_device_list() {
+        tauri::async_runtime::block_on(async {
+            let a = device("a", true).await;
+            let b = device("b", true).await;
+            pair(&a, &b);
+            a.engine.save();
+            let on_disk = || std::fs::read_to_string(a.dir.join("devices.json")).unwrap();
+            let before = on_disk();
+            assert!(before.contains("\"last_sync\": null"));
+            a.engine.sync_all().await;
+            assert!(a.engine.snapshot().peers[0].last_sync.is_some());
+            assert_eq!(on_disk(), before);
+
+            a.engine.set_device_name("renamed".into());
+            assert!(on_disk().contains("renamed"));
+            assert!(!on_disk().contains("\"last_sync\": null"), "a save for another reason carries the latest sync time");
         });
     }
 
