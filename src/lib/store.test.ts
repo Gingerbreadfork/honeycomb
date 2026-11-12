@@ -249,14 +249,14 @@ describe('Store', () => {
     store.paths = { data_file: DATA, settings_file: '/config/settings.json' };
     await store.loadReadings();
     expect(store.loadError).toMatch(/Permission denied/);
-    store.add(typed);
+    const held = store.add(typed);
     await inside(store).queue;
     expect(onDisk()).toBe(original);
 
     unreadable.clear();
     await store.loadReadings();
     expect(store.loadError).toBeNull();
-    expect(store.readings.map((r) => r.id)).toEqual(['a']);
+    expect(store.readings.map((r) => r.id)).toEqual(['a', held.id]);
   });
 
   it('says the readings are not saved while a changed file cannot be read, and saves once it can', async () => {
@@ -331,6 +331,26 @@ describe('Store', () => {
     expect(store.leaving).toBeNull();
   });
 
+  it('keeps readings that synced in while the file could not be read', async () => {
+    put(DATA, fileOf([line('a', 8, '6.4')]));
+    unreadable.add(DATA);
+    const store = new Store();
+    store.paths = { data_file: DATA, settings_file: '/config/settings.json' };
+    await store.loadReadings();
+    store.ready = true;
+    inside(store).applySynced([fromPhone('from-phone', 5)]);
+    await store.retryLoad();
+    expect(store.loadError).not.toBeNull();
+
+    unreadable.clear();
+    const push = vi.spyOn(store.sync, 'push');
+    await store.retryLoad();
+    await inside(store).queue;
+    expect(store.readings.map((r) => r.id)).toEqual(['a', 'from-phone']);
+    expect(push.mock.calls.at(-1)![0].map((r) => r.id)).toEqual(['a', 'from-phone']);
+    expect(onDisk()).toContain('from-phone');
+  });
+
   it('leaves a file with lines it cannot read alone until told to open it without them', async () => {
     put(DATA, fileOf([line('a', 8, '6.4'), line('needs-repair', 9, 'typo')]));
     const original = onDisk();
@@ -342,7 +362,7 @@ describe('Store', () => {
     expect(store.unreadLines).toBe(1);
     put(DATA, original);
     await inside(store).checkExternalChange();
-    store.add(typed);
+    const held = store.add(typed);
     await inside(store).queue;
     expect(onDisk()).toBe(original);
     expect(store.loadError).not.toBeNull();
@@ -351,7 +371,7 @@ describe('Store', () => {
     expect(store.loadError).toBeNull();
     expect(store.unreadLines).toBe(0);
     expect(backupFile).toHaveBeenCalledWith(DATA, expect.stringMatching(/^\d{4}-\d{2}-\d{2}-\d{6}$/), 14);
-    expect(store.readings.map((r) => r.id)).toEqual(['a']);
+    expect(store.readings.map((r) => r.id)).toEqual(['a', held.id]);
   });
 
   it('will not open a file without time and glucose columns', async () => {

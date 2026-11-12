@@ -306,6 +306,8 @@ export class Store {
    */
   async loadReadings(mode: 'open' | 'external' | 'switch' = 'open', keepReadable = false): Promise<boolean> {
     const external = mode === 'external';
+    // Readings that synced in while this file could not be read. The engine does not send them twice.
+    const pulled = mode === 'open' && this.loadError ? this.rows : [];
     if (!external) {
       this.loadError = null;
       this.unreadLines = 0;
@@ -355,6 +357,10 @@ export class Store {
         if (edit.kept) this.toast(`Kept ${edit.kept} reading${edit.kept === 1 ? '' : 's'} missing from the file. Delete them here to remove them everywhere.`);
         this.toast('Readings reloaded from file');
       }
+      if (pulled.length) {
+        rows = mergeSynced(rows, pulled).rows;
+        rewrite = true;
+      }
       this.rows = rows;
       this.rowsFile = path;
       this.fileMtime = mtime;
@@ -369,7 +375,7 @@ export class Store {
         this.notSaved(`The readings file was changed outside Honeycomb and can't be read, so nothing is saved until it can be. ${message(e)}`);
         return false;
       }
-      this.rows = [];
+      this.rows = pulled;
       this.rowsFile = path;
       this.failedLoad = mode;
       this.loadError = message(e);
