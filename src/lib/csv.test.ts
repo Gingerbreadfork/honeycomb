@@ -79,6 +79,16 @@ describe('csv', () => {
     expect(ids).not.toContain('PHONE1');
   });
 
+  it("does not take another program's id column as the row id", () => {
+    const first = 'ID,Timestamp,Glucose\n1,2026-09-01T08:00:00,6.4\n1,2026-09-01T12:00:00,7.1\n';
+    const second = 'ID,Timestamp,Glucose\n1,2026-09-02T08:00:00,5.9\n';
+    const ids = [...readingsFromCsv(first, 'mmol/L'), ...readingsFromCsv(second, 'mmol/L')].map((r) => r.id);
+    expect(new Set(ids).size).toBe(3);
+    expect(ids).not.toContain('1');
+    const own = 'time,glucose,unit,context,note,id,updated,deleted\n2026-09-01T08:00:00+00:00,6.4,mmol/L,,,k3v9tq2xm8pd,2026-09-01T08:00:07.512+00:00,\n';
+    expect(readingsFromCsv(own, 'mmol/L')[0].id).toBe('k3v9tq2xm8pd');
+  });
+
   it('gives legacy rows a stable id and hides tombstones from the clean export', () => {
     const legacy = 'time,glucose,unit,context,note\n2026-09-01T07:30:00+10:00,6.1,mmol/L,fasting,\n';
     const a = readingsFromCsv(legacy, 'mmol/L');

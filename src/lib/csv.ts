@@ -218,8 +218,9 @@ export function parseReadings(text: string, fallbackUnit: Unit, choice: ColumnCh
   const unitCol = findCol(headers, COLS.unit);
   const contextCol = findCol(headers, COLS.context);
   const noteCol = findCol(headers, COLS.note);
-  const idCol = exactCol(headers, COLS.id);
   const updatedCol = exactCol(headers, COLS.updated);
+  // Only Honeycomb's own files have `updated`. An id column anywhere else is a counter or a device id.
+  const idCol = updatedCol >= 0 ? exactCol(headers, COLS.id) : -1;
   const deletedCol = exactCol(headers, COLS.deleted);
   const dayOrder = detectDayOrder(rows.map((r) => r[timeCol] ?? '')) ?? localeDayOrder();
 
