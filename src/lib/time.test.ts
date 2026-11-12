@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectDayOrder, parseTime } from './time';
+import { detectDayOrder, parseStamp, parseTime, readingTime, toLocalIso } from './time';
 import { parseReadings } from './csv';
 
 const ymdhm = (d: Date | null) => (d ? [d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds()] : null);
@@ -36,6 +36,22 @@ describe('parseTime', () => {
 
   it('reads fractional seconds', () => {
     expect(parseTime('2026-09-15 08:42:07.5')?.getMilliseconds()).toBe(500);
+  });
+});
+
+describe('typed dates', () => {
+  it('waits for a whole year instead of saving a reading in another century', () => {
+    expect(ymdhm(readingTime('2026-09-15', '08:30'))).toEqual([2026, 9, 15, 8, 30, 0]);
+    expect(readingTime('0026-09-15', '08:30')).toBeNull();
+    expect(readingTime('0202-09-15', '08:30')).toBeNull();
+  });
+
+  it('writes a short year so that it reads back', () => {
+    const early = new Date(2026, 8, 15, 8, 0);
+    early.setFullYear(202);
+    const text = toLocalIso(early, false, 0);
+    expect(text).toBe('0202-09-15T08:00:00+00:00');
+    expect(parseStamp(text)?.time.getFullYear()).toBe(202);
   });
 });
 

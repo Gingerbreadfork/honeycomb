@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { dateInputValue, fmtDateTime, fromInputs, isFuture, timeInputValue } from '../lib/time';
+  import { dateInputValue, fmtDateTime, isFuture, readingTime, timeInputValue } from '../lib/time';
   import Icon from './Icon.svelte';
 
   let { value, pinned, onchange }: { value: Date; pinned: boolean; onchange: (d: Date | null) => void } = $props();
@@ -30,12 +30,12 @@
     open = false;
   }
 
-  const typed = $derived(fromInputs(date, time));
+  const typed = $derived(readingTime(date, time));
   const future = $derived(typed !== null && isFuture(typed));
 
   function apply(): void {
-    if (future) return;
-    if (typed) onchange(typed);
+    if (future || !typed) return;
+    onchange(typed);
     open = false;
   }
 
@@ -96,7 +96,7 @@
       {/if}
       <div class="actions">
         <button type="button" class="btn small ghost" onclick={() => (open = false)}>Cancel</button>
-        <button type="button" class="btn small primary" onclick={apply} disabled={future}>Set time</button>
+        <button type="button" class="btn small primary" onclick={apply} disabled={future || !typed}>Set time</button>
       </div>
     </div>
   {/if}

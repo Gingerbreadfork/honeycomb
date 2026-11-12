@@ -6,7 +6,7 @@ export function toLocalIso(d: Date, withMs = false, offset: number | null = null
   const sign = off >= 0 ? '+' : '-';
   const a = Math.abs(off);
   return (
-    `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}` +
+    `${String(d.getFullYear()).padStart(4, '0')}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}` +
     `T${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}` +
     (withMs ? `.${String(d.getMilliseconds()).padStart(3, '0')}` : '') +
     `${sign}${pad2(Math.floor(a / 60))}:${pad2(a % 60)}`
@@ -128,6 +128,12 @@ export function fromInputs(date: string, time: string): Date | null {
   if (!dm || !tm) return null;
   const d = new Date(+dm[1], +dm[2] - 1, +dm[3], +tm[1], +tm[2], 0);
   return isNaN(d.getTime()) ? null : d;
+}
+
+/** The time typed for a reading. Null before 1970: a date that early is a year still being typed. */
+export function readingTime(date: string, time: string): Date | null {
+  const d = fromInputs(date, time);
+  return d && d.getFullYear() >= 1970 ? d : null;
 }
 
 /** A few minutes of slack covers a phone and a computer whose clocks disagree. */
