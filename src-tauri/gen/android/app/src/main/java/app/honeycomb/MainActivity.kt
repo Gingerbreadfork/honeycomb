@@ -37,6 +37,7 @@ class MainActivity : TauriActivity() {
     @JavascriptInterface
     fun shareFile(name: String, mime: String, text: String) {
       runOnUiThread {
+        clearOldShares()
         val dir = File(cacheDir, "shared").apply { mkdirs() }
         val file = File(dir, name.replace(Regex("[^A-Za-z0-9._-]"), "_"))
         file.writeText(text)
@@ -52,9 +53,16 @@ class MainActivity : TauriActivity() {
     }
   }
 
+  /** Shared exports hold readings, so copies from earlier days don't stay in the cache. */
+  private fun clearOldShares() {
+    val cutoff = System.currentTimeMillis() - 24 * 60 * 60 * 1000
+    File(cacheDir, "shared").listFiles()?.forEach { if (it.lastModified() < cutoff) it.delete() }
+  }
+
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    clearOldShares()
     // Back closes whatever the page has open; when nothing is open the app goes to the background.
     onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
       override fun handleOnBackPressed() {
