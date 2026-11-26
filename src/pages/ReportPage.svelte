@@ -345,10 +345,12 @@
     padding: 6px 8px;
     border-bottom: 1px solid var(--line-strong);
   }
+  /* Only the note wraps, so a long one cannot squeeze the other columns. */
   td {
     padding: 5px 8px;
     border-bottom: 1px solid var(--line);
     vertical-align: top;
+    white-space: nowrap;
   }
   tr.first td {
     border-top: 1px solid var(--line-strong);
@@ -364,7 +366,6 @@
   }
   .date {
     color: var(--ink-2);
-    white-space: nowrap;
   }
   .st {
     display: inline-flex;
@@ -377,6 +378,8 @@
   }
   .note {
     color: var(--ink-2);
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
   .none {
     padding: 24px 0;
@@ -418,6 +421,10 @@
     :global(.app.mobile) th:nth-child(6),
     :global(.app.mobile) td:nth-child(6) {
       display: none;
+    }
+    /* With the note hidden, every cell but the date wraps to fit a narrow screen. */
+    :global(.app.mobile) td:not(.date) {
+      white-space: normal;
     }
     :global(.app.mobile) th,
     :global(.app.mobile) td {
