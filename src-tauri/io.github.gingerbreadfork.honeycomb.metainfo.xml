@@ -75,6 +75,14 @@
   </screenshots>
 
   <releases>
+    <release version="0.5.1" date="2026-11-26">
+      <description>
+        <p>
+          A long note no longer squeezes the report's table. The time, status and context of each
+          reading stay on one line, and the note wraps in its own column.
+        </p>
+      </description>
+    </release>
     <release version="0.5.0" date="2026-11-12">
       <description>
         <p>
